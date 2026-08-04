@@ -16,7 +16,7 @@ export function NavLinks() {
   const pathname = usePathname();
 
   return (
-    <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4 pb-2 text-sm">
+    <nav className="mx-auto flex max-w-5xl items-center gap-1 overflow-x-auto px-4 pb-2 text-sm">
       {NAV.map((item) => {
         const active = pathname.startsWith(item.href);
         return (
@@ -33,6 +33,16 @@ export function NavLinks() {
           </Link>
         );
       })}
+      <Link
+        href="/premium"
+        className={
+          pathname.startsWith("/premium")
+            ? "ml-1 shrink-0 rounded-full bg-indigo-600 px-3 py-1.5 font-medium text-white"
+            : "ml-1 shrink-0 rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 px-3 py-1.5 font-medium text-white transition hover:from-indigo-500 hover:to-violet-500"
+        }
+      >
+        ✨ AIプレミアム
+      </Link>
     </nav>
   );
 }

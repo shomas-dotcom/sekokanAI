@@ -5,13 +5,16 @@ import { hash } from "../src/lib/password";
 async function main() {
   const company = await prisma.company.upsert({
     where: { id: "demo-company" },
-    update: {},
+    // 既存デモ会社はフリーミアム導入前からプレミアム機能(見積・施工計画書)を
+    // 利用していたため、挙動を変えないようPREMIUMへ移行する。新規登録はFREEが既定。
+    update: { plan: "PREMIUM" },
     create: {
       id: "demo-company",
       name: "杉本土木株式会社(デモ)",
       address: "埼玉県坂戸市デモ1-2-3",
       representativeName: "デモ 代表",
       licenseNumber: "デモ-000000",
+      plan: "PREMIUM",
     },
   });
 

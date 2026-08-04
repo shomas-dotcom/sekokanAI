@@ -1,11 +1,23 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
+import { isPremium } from "@/lib/premium";
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { NewPlanForm } from "./NewPlanForm";
 
 export default async function NewConstructionPlanPage() {
   const user = await requireUser();
+
+  if (!isPremium(user.company)) {
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">施工計画書を作成</h1>
+        <UpgradePrompt featureName="AI施工計画書作成" />
+      </div>
+    );
+  }
+
   const projects = await prisma.project.findMany({
     where: { companyId: user.companyId },
     include: { customer: true },

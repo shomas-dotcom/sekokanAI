@@ -20,6 +20,13 @@ enum UserRole {
   MEMBER
 }
 
+// フリーミアム化(2026-08-04追記)。既存会社の動作を変えないため、
+// 新規登録の既定値はFREEとし、既存デモ会社はPREMIUMへ移行する(seed参照)。
+enum CompanyPlan {
+  FREE
+  PREMIUM
+}
+
 model Company {
   id                 String              @id @default(cuid())
   name               String
@@ -28,6 +35,7 @@ model Company {
   representativeName String?
   licenseNumber      String? // 建設業許可番号
   logoUrl            String?
+  plan               CompanyPlan         @default(FREE)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   users              User[]
