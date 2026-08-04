@@ -51,8 +51,22 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   auditLogs    AuditLog[]
+  sessions     Session[]
 
   @@index([companyId])
+}
+
+// ログインセッション。Cookieにはtokenの生値のみを保持し、DBにはハッシュ値のみ保存する
+// (DB漏洩時にセッションを乗っ取られないようにするため)。
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Customer {
