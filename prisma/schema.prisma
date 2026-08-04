@@ -1,0 +1,268 @@
+// Prisma schema file
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+//
+// Dev DB: SQLite (file:./dev.db). Production should point DATABASE_URL at a
+// hosted Postgres (Neon/Supabase等) — see ENVIRONMENT_VARIABLES.md.
+// Every business table carries companyId for tenant isolation; all queries
+// must filter by the authenticated user's companyId (see ARCHITECTURE.md).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+model Company {
+  id                 String              @id @default(cuid())
+  name               String
+  address            String?
+  phone              String?
+  representativeName String?
+  licenseNumber      String? // 建設業許可番号
+  logoUrl            String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  users              User[]
+  customers          Customer[]
+  projects           Project[]
+  quotes             Quote[]
+  dailyReports       DailyReport[]
+  constructionPlans  ConstructionPlan[]
+  templates          Template[]
+  auditLogs          AuditLog[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         UserRole  @default(MEMBER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  auditLogs    AuditLog[]
+
+  @@index([companyId])
+}
+
+model Customer {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  projects    Project[]
+
+  @@index([companyId])
+}
+
+enum ProjectStatus {
+  LEAD // 見込み
+  ESTIMATING // 見積中
+  CONTRACTED // 受注
+  IN_PROGRESS // 施工中
+  COMPLETED // 完工
+  LOST // 失注
+}
+
+model Project {
+  id                String              @id @default(cuid())
+  companyId         String
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customerId        String
+  customer          Customer            @relation(fields: [customerId], references: [id])
+  name              String
+  siteAddress       String?
+  orderingParty     String? // 発注者(自治体等)
+  status            ProjectStatus       @default(LEAD)
+  startDate         DateTime?
+  endDate           DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  quotes            Quote[]
+  dailyReports      DailyReport[]
+  constructionPlans ConstructionPlan[]
+
+  @@index([companyId])
+  @@index([customerId])
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+model Quote {
+  id             String      @id @default(cuid())
+  companyId      String
+  company        Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project     @relation(fields: [projectId], references: [id])
+  title          String
+  status         QuoteStatus @default(DRAFT)
+  taxRatePercent Int         @default(10)
+  discountAmount Int         @default(0)
+  notes          String?
+  duplicatedFromId String?  // 複製元見積のID
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  items          QuoteItem[]
+
+  @@index([companyId])
+  @@index([projectId])
+}
+
+// 単価の出所 — AIが単価を勝手に確定しないための区分(要件定義 REQUIREMENTS.md 参照)
+enum PriceSource {
+  COMPANY_RATE // 会社登録単価
+  PAST_ACTUAL // 過去実績単価
+  REFERENCE // 参考単価
+  AI_ESTIMATE // AI推定単価(参考値であることを画面上で必ず明示)
+  MANUAL // 手動入力単価
+}
+
+model QuoteItem {
+  id          String      @id @default(cuid())
+  quoteId     String
+  quote       Quote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  sortOrder   Int         @default(0)
+  itemName    String
+  spec        String? // 規格
+  quantity    Float
+  unit        String
+  unitPrice   Int
+  priceSource PriceSource @default(MANUAL)
+  costPrice   Int? // 原価
+  laborUnits  Float? // 人工
+  machinery   String?
+  materials   String?
+  remarks     String?
+
+  @@index([quoteId])
+}
+
+model DailyReport {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id])
+  reportDate     DateTime
+  weather        String?
+  workerCount    Int?
+  workContent    String?
+  machinery      String?
+  quantityWorked String?
+  safetyNotes    String?
+  issues         String?
+  nextDayPlan    String?
+  rawVoiceInput  String? // 音声認識の元テキスト(監査用)
+  // 音声から認識できず、確認が必要な項目。UIでは断定せず「確認候補」として表示する。
+  // JSON文字列として [{ field: string, guess: string | null, note: string }] を保持
+  unclearItemsJson String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([projectId])
+}
+
+enum PlanSectionStatus {
+  NEEDS_INPUT // 情報不足で未着手
+  DRAFTED // AIが下書きを作成した(未確認)
+  NEEDS_CONFIRMATION // 推測を含む・要人間確認
+  CONFIRMED // 人間が確認済み
+}
+
+model ConstructionPlan {
+  id            String                     @id @default(cuid())
+  companyId     String
+  company       Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId     String
+  project       Project                    @relation(fields: [projectId], references: [id])
+  templateId    String? // 発注者/自治体別テンプレート
+  template      Template?                  @relation(fields: [templateId], references: [id])
+  agentName     String? // 現場代理人(後から入力可)
+  supervisorName String? // 主任技術者(後から入力可)
+  isSubmissionReady Boolean @default(false) // 人間が最終確認するまでfalse
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+  sections      ConstructionPlanSection[]
+
+  @@index([companyId])
+  @@index([projectId])
+}
+
+// 施工計画書の各章(工事概要/施工方針/安全管理...) REQUIREMENTS.md #6 の必須仕様に対応:
+// 不足情報の明示・推測箇所の明示・元資料との対応・断定しない、をsection単位で保持する。
+model ConstructionPlanSection {
+  id              String            @id @default(cuid())
+  planId          String
+  plan            ConstructionPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  sectionKey      String // 例: "工事概要", "施工方針", "安全管理" 等の固定キー
+  title           String
+  sortOrder       Int               @default(0)
+  content         String?
+  status          PlanSectionStatus @default(NEEDS_INPUT)
+  missingInfoJson String? // 不足情報のリスト(JSON配列)
+  assumedItemsJson String? // 推測で埋めた箇所の明示(JSON配列)
+  sourceRefsJson  String? // 元資料(ページ/ファイル名等)との対応(JSON配列)
+
+  @@index([planId])
+}
+
+enum TemplateKind {
+  QUOTE
+  CONSTRUCTION_PLAN
+  DAILY_REPORT
+}
+
+// 会社別・発注者別のテンプレート(価格表示のひな形、施工計画書の章立てなど)
+model Template {
+  id                String              @id @default(cuid())
+  companyId         String
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  kind              TemplateKind
+  name              String
+  configJson        String // テンプレートごとの設定(章立て・既定文言等)をJSONで保持
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  constructionPlans ConstructionPlan[]
+
+  @@index([companyId])
+}
+
+// 操作ログ・アクセスログ(SECURITY.md要件)。個人情報・口座情報・顧客情報の本文は記録しない。
+model AuditLog {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String // 例: "quote.create", "auth.login", "customer.delete"
+  targetType String?
+  targetId   String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([companyId])
+  @@index([userId])
+}
