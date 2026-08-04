@@ -9,7 +9,7 @@ export default function RegisterPage() {
   const [state, formAction, pending] = useActionState(registerAction, undefined);
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-indigo-600 via-violet-600 to-slate-900 px-4 py-12">
+    <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-amber-600 via-orange-600 to-slate-900 px-4 py-12">
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center gap-2 text-center text-white">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-xl font-bold backdrop-blur">
@@ -38,7 +38,7 @@ export default function RegisterPage() {
             </FieldLabel>
 
             <label className="flex items-start gap-2 text-sm text-slate-600">
-              <input type="checkbox" name="agreed" className="mt-1 accent-indigo-600" />
+              <input type="checkbox" name="agreed" className="mt-1 accent-amber-600" />
               <span>利用規約・プライバシーポリシーに同意します。</span>
             </label>
 
@@ -53,7 +53,7 @@ export default function RegisterPage() {
 
           <p className="mt-6 text-center text-sm text-slate-500">
             既にアカウントをお持ちの方は{" "}
-            <Link href="/login" className="font-medium text-indigo-600 underline">
+            <Link href="/login" className="font-medium text-orange-700 underline">
               ログイン
             </Link>
           </p>

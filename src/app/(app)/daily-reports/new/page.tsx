@@ -16,7 +16,7 @@ export default async function NewDailyReportPage() {
     return (
       <p className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
         先に
-        <Link href="/projects/new" className="mx-1 font-medium text-indigo-600 underline">
+        <Link href="/projects/new" className="mx-1 font-medium text-orange-700 underline">
           案件を登録
         </Link>
         してください。

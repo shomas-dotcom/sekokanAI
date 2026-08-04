@@ -53,13 +53,13 @@ export default async function DashboardPage() {
         <h2 className="font-semibold text-slate-900">はじめに</h2>
         <ol className="mt-2 list-inside list-decimal space-y-1 text-sm text-slate-600">
           <li>
-            <Link href="/customers/new" className="font-medium text-indigo-600 underline">
+            <Link href="/customers/new" className="font-medium text-orange-700 underline">
               顧客を登録
             </Link>
             する
           </li>
           <li>
-            <Link href="/projects/new" className="font-medium text-indigo-600 underline">
+            <Link href="/projects/new" className="font-medium text-orange-700 underline">
               案件を登録
             </Link>
             する

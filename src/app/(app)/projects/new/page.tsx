@@ -19,7 +19,7 @@ export default async function NewProjectPage() {
       {customers.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
           先に
-          <Link href="/customers/new" className="mx-1 font-medium text-indigo-600 underline">
+          <Link href="/customers/new" className="mx-1 font-medium text-orange-700 underline">
             顧客を登録
           </Link>
           してください。

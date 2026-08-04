@@ -43,7 +43,7 @@ export default async function QuotesPage() {
                 <p className="mt-1 text-sm text-slate-500">
                   {q.project.customer.name} / {q.project.name}
                 </p>
-                <p className="mt-2 text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">
+                <p className="mt-2 text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-600 to-orange-600">
                   {total.toLocaleString("ja-JP")}円
                 </p>
               </Link>

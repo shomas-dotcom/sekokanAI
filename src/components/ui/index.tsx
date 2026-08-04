@@ -12,7 +12,7 @@ function cx(...classes: (string | false | undefined)[]) {
 }
 
 const fieldBase =
-  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[15px] text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30";
+  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[15px] text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30";
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> }) {
   const { className, ref, ...rest } = props;
@@ -63,11 +63,13 @@ export function FieldLabel({
 
 const buttonVariants = {
   primary:
-    "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-sm shadow-indigo-600/20 hover:from-indigo-500 hover:to-violet-500",
+    "bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-sm shadow-orange-600/25 hover:from-amber-400 hover:to-orange-500",
   secondary:
     "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50",
   ghost: "text-slate-600 hover:bg-slate-100",
   danger: "text-rose-600 underline decoration-rose-300 underline-offset-2 hover:text-rose-700",
+  // AIが関わった操作であることを示す配色(音声入力など)。通常の主要アクションとは区別する。
+  ai: "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-sm shadow-indigo-600/20 hover:from-indigo-500 hover:to-violet-500",
 };
 
 export function Button(

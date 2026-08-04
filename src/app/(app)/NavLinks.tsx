@@ -25,7 +25,7 @@ export function NavLinks() {
             href={item.href}
             className={
               active
-                ? "shrink-0 rounded-full bg-indigo-50 px-3 py-1.5 font-medium text-indigo-700"
+                ? "shrink-0 rounded-full bg-amber-50 px-3 py-1.5 font-medium text-amber-800"
                 : "shrink-0 rounded-full px-3 py-1.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
             }
           >

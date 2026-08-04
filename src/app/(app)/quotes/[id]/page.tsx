@@ -14,9 +14,9 @@ import {
 } from "../actions";
 
 const inputClass =
-  "w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30";
+  "w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30";
 const primaryButtonClass =
-  "rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-600/20 transition hover:from-indigo-500 hover:to-violet-500";
+  "rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-orange-600/25 transition hover:from-amber-400 hover:to-orange-500";
 const secondaryButtonClass =
   "rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition hover:bg-slate-50";
 

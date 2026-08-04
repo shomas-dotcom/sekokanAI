@@ -9,7 +9,7 @@ export default function LoginPage() {
   const [state, formAction, pending] = useActionState(loginAction, undefined);
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-indigo-600 via-violet-600 to-slate-900 px-4 py-12">
+    <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-amber-600 via-orange-600 to-slate-900 px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-2 text-center text-white">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-xl font-bold backdrop-blur">
@@ -41,7 +41,7 @@ export default function LoginPage() {
 
           <p className="mt-6 text-center text-sm text-slate-500">
             アカウントをお持ちでない方は{" "}
-            <Link href="/register" className="font-medium text-indigo-600 underline">
+            <Link href="/register" className="font-medium text-orange-700 underline">
               会社登録
             </Link>
           </p>
