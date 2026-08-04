@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ProjectForm } from "../ProjectForm";
 import { updateProjectAction, deleteProjectAction } from "../actions";
+import { Card, Button } from "@/components/ui";
 
 export default async function EditProjectPage({
   params,
@@ -24,20 +25,20 @@ export default async function EditProjectPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold text-zinc-900">{project.name}</h1>
-      <div className="max-w-lg rounded-xl border border-zinc-200 bg-white p-6">
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">{project.name}</h1>
+      <Card className="max-w-lg">
         <ProjectForm
           action={updateProjectAction}
           project={project}
           customers={customers}
           submitLabel="更新する"
         />
-      </div>
+      </Card>
       <form action={deleteProjectAction} className="max-w-lg">
         <input type="hidden" name="id" value={project.id} />
-        <button type="submit" className="text-sm text-red-600 underline">
+        <Button type="submit" variant="danger">
           この案件を削除する
-        </button>
+        </Button>
       </form>
     </div>
   );

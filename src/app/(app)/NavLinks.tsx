@@ -1,0 +1,38 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+const NAV = [
+  { href: "/dashboard", label: "ダッシュボード" },
+  { href: "/customers", label: "顧客" },
+  { href: "/projects", label: "案件" },
+  { href: "/quotes", label: "見積" },
+  { href: "/daily-reports", label: "日報" },
+  { href: "/construction-plans", label: "施工計画書" },
+];
+
+export function NavLinks() {
+  const pathname = usePathname();
+
+  return (
+    <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4 pb-2 text-sm">
+      {NAV.map((item) => {
+        const active = pathname.startsWith(item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={
+              active
+                ? "shrink-0 rounded-full bg-indigo-50 px-3 py-1.5 font-medium text-indigo-700"
+                : "shrink-0 rounded-full px-3 py-1.5 font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+            }
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}

@@ -2,20 +2,18 @@
 
 import { useActionState } from "react";
 import { createQuoteAction } from "../actions";
+import { Input, Select, Textarea, Button, FieldLabel } from "@/components/ui";
+import { VoiceInputButton } from "@/components/VoiceInputButton";
+import { useRef } from "react";
 
 export function NewQuoteForm({ projects }: { projects: { id: string; label: string }[] }) {
   const [state, formAction, pending] = useActionState(createQuoteAction, undefined);
+  const freeTextRef = useRef<HTMLTextAreaElement>(null);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-        案件<span className="text-red-500"> *</span>
-        <select
-          name="projectId"
-          required
-          defaultValue=""
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-        >
+      <FieldLabel label="案件" required>
+        <Select name="projectId" required defaultValue="">
           <option value="" disabled>
             選択してください
           </option>
@@ -24,43 +22,36 @@ export function NewQuoteForm({ projects }: { projects: { id: string; label: stri
               {p.label}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </FieldLabel>
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-        見積名<span className="text-red-500"> *</span>
-        <input
-          name="title"
-          required
-          placeholder="例: 道路築造工事 見積書"
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-        />
-      </label>
+      <FieldLabel label="見積名" required>
+        <Input name="title" required placeholder="例: 道路築造工事 見積書" />
+      </FieldLabel>
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-        工事内容(自由記述、任意)
-        <textarea
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-slate-700">工事内容(自由記述、任意)</span>
+          <VoiceInputButton targetRef={freeTextRef} mode="append" />
+        </div>
+        <Textarea
+          ref={freeTextRef}
           name="freeText"
           rows={4}
           placeholder={"例:\n掘削工\n残土処分\nL型側溝設置"}
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
         />
-        <span className="text-xs text-zinc-400">
-          改行区切りでAIが見積項目の下書きを作成します(単価は未設定・要確認)。空欄でも作成できます。
+        <span className="text-xs text-slate-400">
+          改行区切りでAIが見積項目の下書きを作成します(単価は未設定・要確認)。マイクボタンで音声入力もできます。
         </span>
-      </label>
+      </div>
 
       {state?.error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
       )}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-      >
+      <Button type="submit" disabled={pending}>
         {pending ? "作成中..." : "見積を作成"}
-      </button>
+      </Button>
     </form>
   );
 }

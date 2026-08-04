@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { CustomerForm } from "../CustomerForm";
 import { updateCustomerAction, deleteCustomerAction } from "../actions";
+import { Card, Button } from "@/components/ui";
 
 export default async function EditCustomerPage({
   params,
@@ -18,15 +19,15 @@ export default async function EditCustomerPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold text-zinc-900">{customer.name}</h1>
-      <div className="max-w-lg rounded-xl border border-zinc-200 bg-white p-6">
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">{customer.name}</h1>
+      <Card className="max-w-lg">
         <CustomerForm action={updateCustomerAction} customer={customer} submitLabel="更新する" />
-      </div>
+      </Card>
       <form action={deleteCustomerAction} className="max-w-lg">
         <input type="hidden" name="id" value={customer.id} />
-        <button type="submit" className="text-sm text-red-600 underline">
+        <Button type="submit" variant="danger">
           この顧客を削除する
-        </button>
+        </Button>
       </form>
     </div>
   );

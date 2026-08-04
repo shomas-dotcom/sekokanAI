@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { computeQuoteTotals } from "./totals";
 import { QUOTE_STATUS_LABEL } from "./priceSourceLabel";
+import { Button, Badge } from "@/components/ui";
 
 export default async function QuotesPage() {
   const user = await requireUser();
@@ -15,17 +16,14 @@ export default async function QuotesPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-zinc-900">見積</h1>
-        <Link
-          href="/quotes/new"
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white"
-        >
-          + 見積を作成
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">見積</h1>
+        <Link href="/quotes/new">
+          <Button>+ 見積を作成</Button>
         </Link>
       </div>
 
       {quotes.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
+        <p className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
           まだ見積がありません。
         </p>
       ) : (
@@ -36,18 +34,16 @@ export default async function QuotesPage() {
               <Link
                 key={q.id}
                 href={`/quotes/${q.id}`}
-                className="rounded-xl border border-zinc-200 bg-white p-4 hover:border-zinc-400"
+                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50 transition hover:-translate-y-0.5 hover:shadow-md"
               >
                 <div className="flex items-center justify-between">
-                  <p className="font-semibold text-zinc-900">{q.title}</p>
-                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600">
-                    {QUOTE_STATUS_LABEL[q.status]}
-                  </span>
+                  <p className="font-semibold text-slate-900">{q.title}</p>
+                  <Badge>{QUOTE_STATUS_LABEL[q.status]}</Badge>
                 </div>
-                <p className="mt-1 text-sm text-zinc-500">
+                <p className="mt-1 text-sm text-slate-500">
                   {q.project.customer.name} / {q.project.name}
                 </p>
-                <p className="mt-2 text-lg font-bold text-zinc-900">
+                <p className="mt-2 text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">
                   {total.toLocaleString("ja-JP")}円
                 </p>
               </Link>

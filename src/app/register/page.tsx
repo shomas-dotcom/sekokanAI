@@ -3,86 +3,62 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import { registerAction } from "./actions";
+import { Input, Button, Card, FieldLabel } from "@/components/ui";
 
 export default function RegisterPage() {
   const [state, formAction, pending] = useActionState(registerAction, undefined);
 
   return (
-    <div className="flex flex-1 items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-sm sm:p-8">
-        <h1 className="text-xl font-bold">会社登録(無料)</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          会社情報と管理者アカウントを作成します。
-        </p>
+    <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-indigo-600 via-violet-600 to-slate-900 px-4 py-12">
+      <div className="w-full max-w-md">
+        <div className="mb-6 flex flex-col items-center gap-2 text-center text-white">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-xl font-bold backdrop-blur">
+            現
+          </span>
+          <h1 className="text-2xl font-bold tracking-tight">会社登録(無料)</h1>
+          <p className="text-sm text-white/70">会社情報と管理者アカウントを作成します</p>
+        </div>
 
-        <form action={formAction} className="mt-6 flex flex-col gap-4">
-          <Field label="会社名" name="companyName" required />
-          <Field label="代表者名" name="representativeName" />
-          <Field label="担当者氏名" name="userName" required />
-          <Field label="メールアドレス" name="email" type="email" required />
-          <Field
-            label="パスワード(8文字以上)"
-            name="password"
-            type="password"
-            required
-            minLength={8}
-          />
+        <Card>
+          <form action={formAction} className="flex flex-col gap-4">
+            <FieldLabel label="会社名" required>
+              <Input name="companyName" required />
+            </FieldLabel>
+            <FieldLabel label="代表者名">
+              <Input name="representativeName" />
+            </FieldLabel>
+            <FieldLabel label="担当者氏名" required>
+              <Input name="userName" required />
+            </FieldLabel>
+            <FieldLabel label="メールアドレス" required>
+              <Input name="email" type="email" required />
+            </FieldLabel>
+            <FieldLabel label="パスワード(8文字以上)" required>
+              <Input name="password" type="password" required minLength={8} />
+            </FieldLabel>
 
-          <label className="flex items-start gap-2 text-sm text-zinc-600">
-            <input type="checkbox" name="agreed" className="mt-1" />
-            <span>利用規約・プライバシーポリシーに同意します。</span>
-          </label>
+            <label className="flex items-start gap-2 text-sm text-slate-600">
+              <input type="checkbox" name="agreed" className="mt-1 accent-indigo-600" />
+              <span>利用規約・プライバシーポリシーに同意します。</span>
+            </label>
 
-          {state?.error && (
-            <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-              {state.error}
-            </p>
-          )}
+            {state?.error && (
+              <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
+            )}
 
-          <button
-            type="submit"
-            disabled={pending}
-            className="mt-2 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {pending ? "登録中..." : "登録する"}
-          </button>
-        </form>
+            <Button type="submit" disabled={pending} className="mt-1 w-full">
+              {pending ? "登録中..." : "登録する"}
+            </Button>
+          </form>
 
-        <p className="mt-6 text-center text-sm text-zinc-500">
-          既にアカウントをお持ちの方は{" "}
-          <Link href="/login" className="font-medium text-zinc-900 underline">
-            ログイン
-          </Link>
-        </p>
+          <p className="mt-6 text-center text-sm text-slate-500">
+            既にアカウントをお持ちの方は{" "}
+            <Link href="/login" className="font-medium text-indigo-600 underline">
+              ログイン
+            </Link>
+          </p>
+        </Card>
       </div>
     </div>
-  );
-}
-
-function Field({
-  label,
-  name,
-  type = "text",
-  required,
-  minLength,
-}: {
-  label: string;
-  name: string;
-  type?: string;
-  required?: boolean;
-  minLength?: number;
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-      {label}
-      {required && <span className="text-red-500"> *</span>}
-      <input
-        name={name}
-        type={type}
-        required={required}
-        minLength={minLength}
-        className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-      />
-    </label>
   );
 }

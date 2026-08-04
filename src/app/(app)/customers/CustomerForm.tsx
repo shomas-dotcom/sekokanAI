@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import type { CustomerFormState } from "./actions";
+import { Input, Textarea, Button, FieldLabel } from "@/components/ui";
 
 type Customer = {
   id: string;
@@ -27,60 +28,32 @@ export function CustomerForm({
   return (
     <form action={formAction} className="flex flex-col gap-4">
       {customer && <input type="hidden" name="id" value={customer.id} />}
-      <Field label="顧客名" name="name" required defaultValue={customer?.name} />
-      <Field label="担当者名" name="contactName" defaultValue={customer?.contactName ?? ""} />
-      <Field label="電話番号" name="phone" defaultValue={customer?.phone ?? ""} />
-      <Field label="メールアドレス" name="email" type="email" defaultValue={customer?.email ?? ""} />
-      <Field label="住所" name="address" defaultValue={customer?.address ?? ""} />
-      <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-        備考
-        <textarea
-          name="notes"
-          defaultValue={customer?.notes ?? ""}
-          rows={3}
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-        />
-      </label>
+      <FieldLabel label="顧客名" required>
+        <Input name="name" required defaultValue={customer?.name} />
+      </FieldLabel>
+      <FieldLabel label="担当者名">
+        <Input name="contactName" defaultValue={customer?.contactName ?? ""} />
+      </FieldLabel>
+      <FieldLabel label="電話番号">
+        <Input name="phone" defaultValue={customer?.phone ?? ""} />
+      </FieldLabel>
+      <FieldLabel label="メールアドレス">
+        <Input name="email" type="email" defaultValue={customer?.email ?? ""} />
+      </FieldLabel>
+      <FieldLabel label="住所">
+        <Input name="address" defaultValue={customer?.address ?? ""} />
+      </FieldLabel>
+      <FieldLabel label="備考">
+        <Textarea name="notes" defaultValue={customer?.notes ?? ""} rows={3} />
+      </FieldLabel>
 
       {state?.error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
       )}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-      >
+      <Button type="submit" disabled={pending}>
         {pending ? "保存中..." : submitLabel}
-      </button>
+      </Button>
     </form>
-  );
-}
-
-function Field({
-  label,
-  name,
-  type = "text",
-  required,
-  defaultValue,
-}: {
-  label: string;
-  name: string;
-  type?: string;
-  required?: boolean;
-  defaultValue?: string;
-}) {
-  return (
-    <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-      {label}
-      {required && <span className="text-red-500"> *</span>}
-      <input
-        name={name}
-        type={type}
-        required={required}
-        defaultValue={defaultValue}
-        className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-      />
-    </label>
   );
 }

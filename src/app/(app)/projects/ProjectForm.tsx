@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import type { ProjectFormState } from "./actions";
 import { STATUS_LABEL } from "./statusLabel";
 import type { ProjectStatus } from "@/generated/prisma/enums";
+import { Input, Select, Button, FieldLabel } from "@/components/ui";
 
 type Project = {
   id: string;
@@ -31,14 +32,8 @@ export function ProjectForm({
     <form action={formAction} className="flex flex-col gap-4">
       {project && <input type="hidden" name="id" value={project.id} />}
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-        顧客<span className="text-red-500"> *</span>
-        <select
-          name="customerId"
-          required
-          defaultValue={project?.customerId ?? ""}
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-        >
+      <FieldLabel label="顧客" required>
+        <Select name="customerId" required defaultValue={project?.customerId ?? ""}>
           <option value="" disabled>
             選択してください
           </option>
@@ -47,63 +42,38 @@ export function ProjectForm({
               {c.name}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </FieldLabel>
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-        案件名<span className="text-red-500"> *</span>
-        <input
-          name="name"
-          required
-          defaultValue={project?.name}
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-        />
-      </label>
+      <FieldLabel label="案件名" required>
+        <Input name="name" required defaultValue={project?.name} />
+      </FieldLabel>
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-        現場住所
-        <input
-          name="siteAddress"
-          defaultValue={project?.siteAddress ?? ""}
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-        />
-      </label>
+      <FieldLabel label="現場住所">
+        <Input name="siteAddress" defaultValue={project?.siteAddress ?? ""} />
+      </FieldLabel>
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-        発注者
-        <input
-          name="orderingParty"
-          defaultValue={project?.orderingParty ?? ""}
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-        />
-      </label>
+      <FieldLabel label="発注者">
+        <Input name="orderingParty" defaultValue={project?.orderingParty ?? ""} />
+      </FieldLabel>
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
-        ステータス
-        <select
-          name="status"
-          defaultValue={project?.status ?? "LEAD"}
-          className="rounded-lg border border-zinc-300 px-3 py-2 text-base font-normal text-zinc-900 focus:border-zinc-500 focus:outline-none"
-        >
+      <FieldLabel label="ステータス">
+        <Select name="status" defaultValue={project?.status ?? "LEAD"}>
           {Object.entries(STATUS_LABEL).map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </FieldLabel>
 
       {state?.error && (
-        <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
       )}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-      >
+      <Button type="submit" disabled={pending}>
         {pending ? "保存中..." : submitLabel}
-      </button>
+      </Button>
     </form>
   );
 }

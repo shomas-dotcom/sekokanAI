@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ProjectForm } from "../ProjectForm";
 import { createProjectAction } from "../actions";
+import { Card } from "@/components/ui";
 
 export default async function NewProjectPage() {
   const user = await requireUser();
@@ -14,19 +15,19 @@ export default async function NewProjectPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold text-zinc-900">案件を追加</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">案件を追加</h1>
       {customers.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
+        <p className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
           先に
-          <Link href="/customers/new" className="mx-1 underline">
+          <Link href="/customers/new" className="mx-1 font-medium text-indigo-600 underline">
             顧客を登録
           </Link>
           してください。
         </p>
       ) : (
-        <div className="max-w-lg rounded-xl border border-zinc-200 bg-white p-6">
+        <Card className="max-w-lg">
           <ProjectForm action={createProjectAction} customers={customers} submitLabel="登録する" />
-        </div>
+        </Card>
       )}
     </div>
   );
