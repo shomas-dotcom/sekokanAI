@@ -111,3 +111,55 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
     unclearItems,
   };
 }
+
+// 施工計画書の固定章立て(REQUIREMENTS.md 施工計画書機能の必須仕様)
+export const CONSTRUCTION_PLAN_SECTIONS: { key: string; title: string }[] = [
+  { key: "overview", title: "工事概要" },
+  { key: "policy", title: "施工方針" },
+  { key: "method", title: "施工方法" },
+  { key: "procedure", title: "施工手順" },
+  { key: "schedule", title: "工程管理" },
+  { key: "quality", title: "品質管理" },
+  { key: "finishedForm", title: "出来形管理" },
+  { key: "safety", title: "安全管理" },
+  { key: "traffic", title: "交通管理" },
+  { key: "environment", title: "環境対策" },
+  { key: "byproduct", title: "建設副産物管理" },
+  { key: "emergency", title: "緊急時対応" },
+  { key: "machinery", title: "使用機械" },
+  { key: "organization", title: "施工体制" },
+  { key: "materials", title: "資材管理" },
+  { key: "orgChart", title: "現場組織表" },
+  { key: "flow", title: "施工フロー" },
+];
+
+/**
+ * 施工計画書の各章について、ユーザーが入力した箇条書きメモを文章として整形する。
+ *
+ * 重要: これは「文章の整形」のみを行い、記載されていない施工方法・数値・法令等を
+ * 新たに作り出すことはしない(REQUIREMENTS.md「根拠資料がない事項は断定しない」)。
+ * 常に status=NEEDS_CONFIRMATION として返し、内容の正確性は必ず人間が確認する
+ * ことを前提とする。
+ */
+export async function draftConstructionPlanSection(
+  sectionTitle: string,
+  memo: string
+): Promise<{ content: string; assumedItems: string[] }> {
+  const bullets = memo
+    .split(/\r?\n|、/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (bullets.length === 0) {
+    return { content: "", assumedItems: [] };
+  }
+
+  const content = `${sectionTitle}について、以下のとおり計画する。\n` + bullets.map((b) => `・${b}`).join("\n");
+
+  return {
+    content,
+    assumedItems: [
+      "この文章は入力メモをAIが箇条書きから整形しただけであり、内容(数値・工法・法令適合性等)の正確性は未確認です。提出前に必ず人間が確認してください。",
+    ],
+  };
+}
