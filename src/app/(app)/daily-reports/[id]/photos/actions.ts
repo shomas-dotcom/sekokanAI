@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { validateImageFile } from "@/lib/fileValidation";
 
 export type PhotoFormState = { error?: string } | undefined;
 
@@ -27,8 +28,9 @@ export async function uploadPhotoAction(
   if (!(file instanceof File) || file.size === 0) {
     return { error: "写真を選択してください。" };
   }
-  if (!file.type.startsWith("image/")) {
-    return { error: "画像ファイルを選択してください。" };
+  const validationError = validateImageFile(file);
+  if (validationError) {
+    return { error: validationError };
   }
 
   const report = await prisma.dailyReport.findFirst({

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -15,6 +15,18 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "現場AI | 建設業向けAI業務改善パッケージ",
   description: "見積・日報・施工計画書の作成を、現場からスマホで。",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "現場AI",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ea580c",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

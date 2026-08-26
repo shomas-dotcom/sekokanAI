@@ -61,7 +61,7 @@ export function PhotoUploadForm({
         ref={fileInputRef}
         type="file"
         name="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
         capture="environment"
         onChange={handleFileChange}
         className="text-sm"
