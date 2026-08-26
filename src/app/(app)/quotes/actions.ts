@@ -7,6 +7,7 @@ import { isPremium } from "@/lib/premium";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { draftQuoteItemsFromText } from "@/lib/ai";
+import { advanceProjectStatus } from "@/lib/projectStatus";
 import type { PriceSource, RateCategory } from "@/generated/prisma/enums";
 
 const RATE_CATEGORIES: RateCategory[] = [
@@ -117,6 +118,13 @@ export async function updateQuoteMetaAction(formData: FormData) {
     },
   });
   if (result.count === 0) redirect("/quotes");
+
+  // 見積が受注になったら、現場のステータスも自動で「受注」まで進める
+  // (二重入力を避けるため。現場側の手入力を上書きすることはなく、前進のみ行う)
+  if (status === "ACCEPTED") {
+    const quote = await prisma.quote.findUnique({ where: { id }, select: { projectId: true } });
+    if (quote) await advanceProjectStatus(quote.projectId, "CONTRACTED");
+  }
 
   await logAction({
     companyId: user.companyId,

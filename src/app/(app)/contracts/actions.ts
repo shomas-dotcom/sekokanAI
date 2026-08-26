@@ -8,6 +8,7 @@ import { logAction } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { computeContractAmounts } from "@/lib/calc";
 import { buildDefaultClauses, type ContractClause } from "@/lib/contractClauses";
+import { advanceProjectStatus } from "@/lib/projectStatus";
 import { computeQuoteTotals } from "../quotes/totals";
 
 export type ContractFormState = { error?: string } | undefined;
@@ -212,6 +213,9 @@ export async function confirmContractAction(formData: FormData) {
     where: { id },
     data: { status: "CONFIRMED", confirmedSnapshotJson: JSON.stringify(snapshot) },
   });
+
+  // 契約確定で現場は「施工中」まで自動的に進める(二重入力を避けるため。前進のみ)
+  await advanceProjectStatus(contract.projectId, "IN_PROGRESS");
 
   await logAction({
     companyId: user.companyId,

@@ -631,6 +631,7 @@ model Contract {
 enum InvoiceStatus {
   DRAFT
   ISSUED
+  PAID
   CANCELLED
 }
 
@@ -668,6 +669,7 @@ model Invoice {
   total                  Int           @default(0)
   roundingMode           RoundingMode  @default(ROUND)
   status                 InvoiceStatus @default(DRAFT)
+  paidAt                 DateTime? // 入金確認日時(手動で「入金確認」操作した時点)
   notes                  String?
   issuedSnapshotJson     String? // 発行時点のスナップショット(JSON)
   createdAt              DateTime      @default(now())

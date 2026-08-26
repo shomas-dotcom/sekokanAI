@@ -50,11 +50,16 @@ export default async function DashboardPage() {
     prisma.project.count({ where: { companyId, status: "ESTIMATING" } }),
     prisma.contract.count({ where: { companyId, status: "CONFIRMED" } }),
     prisma.contract.count({
-      where: { companyId, status: "CONFIRMED", invoices: { some: { status: "ISSUED" } } },
+      where: {
+        companyId,
+        status: "CONFIRMED",
+        invoices: { some: { status: { in: ["ISSUED", "PAID"] } } },
+      },
     }),
     prisma.invoice.count({ where: { companyId, status: "ISSUED" } }),
     prisma.invoice.aggregate({
-      where: { companyId, status: "ISSUED", issueDate: { gte: monthStart, lt: monthEnd } },
+      // 入金済み(PAID)も「発行済みの請求実績」として当月の請求金額に含める
+      where: { companyId, status: { in: ["ISSUED", "PAID"] }, issueDate: { gte: monthStart, lt: monthEnd } },
       _sum: { total: true },
     }),
     // 依頼文の「AI分析(人工集計・残業時間等の自動集計)」はLLMを使わず単純なSQL集計で実現する

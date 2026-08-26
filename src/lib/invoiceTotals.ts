@@ -39,7 +39,8 @@ export async function recomputeInvoiceTotals(tx: TxClient, invoiceId: string): P
       where: {
         contractId: invoice.contractId,
         id: { not: invoiceId },
-        status: "ISSUED",
+        // 入金確認済み(PAID)の請求書も、発行済みとして累計請求額に数え続ける
+        status: { in: ["ISSUED", "PAID"] },
       },
       select: { currentBilledAmount: true },
     });

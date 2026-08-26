@@ -252,12 +252,37 @@ export async function issueInvoiceAction(formData: FormData) {
   redirect(`/invoices/${id}`);
 }
 
-export async function cancelInvoiceAction(formData: FormData) {
+export async function markInvoicePaidAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get("id") ?? "");
 
   const result = await prisma.invoice.updateMany({
-    where: { id, companyId: user.companyId, status: { not: "CANCELLED" } },
+    where: { id, companyId: user.companyId, status: "ISSUED" },
+    data: { status: "PAID", paidAt: new Date() },
+  });
+  if (result.count > 0) {
+    await logAction({
+      companyId: user.companyId,
+      userId: user.id,
+      action: "invoice.markPaid",
+      targetType: "Invoice",
+      targetId: id,
+    });
+  }
+
+  revalidatePath(`/invoices/${id}`);
+  revalidatePath("/invoices");
+  redirect(`/invoices/${id}`);
+}
+
+export async function cancelInvoiceAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get("id") ?? "");
+
+  // 入金確認済み(PAID)の請求書は誤操作防止のためここでは取消できないようにする
+  // (訂正が必要な場合は別途、経理上の正しい手順(赤伝票等)で対応する運用とする)
+  const result = await prisma.invoice.updateMany({
+    where: { id, companyId: user.companyId, status: { notIn: ["CANCELLED", "PAID"] } },
     data: { status: "CANCELLED" },
   });
   if (result.count > 0) {

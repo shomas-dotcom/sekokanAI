@@ -9,6 +9,7 @@ import {
   updateInvoiceItemAction,
   deleteInvoiceItemAction,
   issueInvoiceAction,
+  markInvoicePaidAction,
   cancelInvoiceAction,
   deleteInvoiceAction,
 } from "../actions";
@@ -84,6 +85,9 @@ export default async function InvoiceDetailPage({
       {!isDraft && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
           この請求書は{INVOICE_STATUS_LABEL[invoice.status]}です。内容は発行時点のスナップショットとして保存されており、以後変更されません。
+          {invoice.status === "PAID" && invoice.paidAt && (
+            <span className="block">入金確認日: {invoice.paidAt.toLocaleDateString("ja-JP")}</span>
+          )}
         </div>
       )}
 
@@ -242,7 +246,13 @@ export default async function InvoiceDetailPage({
             </button>
           </form>
         )}
-        {!isDraft && invoice.status !== "CANCELLED" && (
+        {invoice.status === "ISSUED" && (
+          <form action={markInvoicePaidAction}>
+            <input type="hidden" name="id" value={invoice.id} />
+            <button className={primaryButtonClass}>入金を確認する</button>
+          </form>
+        )}
+        {invoice.status === "ISSUED" && (
           <form action={cancelInvoiceAction}>
             <input type="hidden" name="id" value={invoice.id} />
             <button className={secondaryButtonClass}>この請求書を取消にする</button>

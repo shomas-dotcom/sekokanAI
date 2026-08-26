@@ -2,13 +2,15 @@ import type { InvoiceStatus, BillingType } from "@/generated/prisma/enums";
 
 export const INVOICE_STATUS_LABEL: Record<InvoiceStatus, string> = {
   DRAFT: "下書き",
-  ISSUED: "発行済み",
+  ISSUED: "発行済み(入金待ち)",
+  PAID: "入金済み",
   CANCELLED: "取消",
 };
 
 export const INVOICE_STATUS_COLOR: Record<InvoiceStatus, string> = {
   DRAFT: "bg-slate-100 text-slate-600",
-  ISSUED: "bg-emerald-100 text-emerald-700",
+  ISSUED: "bg-amber-100 text-amber-700",
+  PAID: "bg-emerald-100 text-emerald-700",
   CANCELLED: "bg-rose-100 text-rose-700",
 };
 
