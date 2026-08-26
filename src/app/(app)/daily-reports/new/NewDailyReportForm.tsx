@@ -11,14 +11,16 @@ type ProjectOption = { id: string; name: string; customerName: string };
 export function NewDailyReportForm({
   projects,
   workItemLabels,
+  defaultProjectId,
 }: {
   projects: ProjectOption[];
   workItemLabels: string[];
+  defaultProjectId?: string;
 }) {
   const [state, formAction, pending] = useActionState(createDailyReportAction, undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [hasText, setHasText] = useState(false);
-  const [projectId, setProjectId] = useState("");
+  const [projectId, setProjectId] = useState(defaultProjectId ?? "");
   const today = new Date().toISOString().slice(0, 10);
 
   // 取引先名は工事名(案件)に紐づくCustomerマスタから取得する(重複入力を避けるため

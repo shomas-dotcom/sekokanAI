@@ -8,6 +8,23 @@ export default async function DashboardPage() {
   const user = await requireUser();
   const companyId = user.companyId;
 
+  // 「今日の現場」= 施工中の案件。無ければ受注済み・見積中の案件で代用する
+  // (依頼文「ログインすると最初に今日の現場を表示する」ため、常に何か表示できるようにする)。
+  let todaysProjects = await prisma.project.findMany({
+    where: { companyId, status: "IN_PROGRESS" },
+    include: { customer: true },
+    orderBy: { updatedAt: "desc" },
+    take: 5,
+  });
+  if (todaysProjects.length === 0) {
+    todaysProjects = await prisma.project.findMany({
+      where: { companyId, status: { in: ["CONTRACTED", "ESTIMATING"] } },
+      include: { customer: true },
+      orderBy: { updatedAt: "desc" },
+      take: 5,
+    });
+  }
+
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -86,6 +103,44 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">ダッシュボード</h1>
         <p className="mt-1 text-sm text-slate-500">{user.company.name} の概況</p>
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-slate-500">今日の現場</h2>
+        {todaysProjects.length === 0 ? (
+          <Card className="text-center text-sm text-slate-500">
+            まだ現場が登録されていません。
+            <Link href="/projects/new" className="ml-1 font-medium text-orange-700 underline">
+              現場を登録する
+            </Link>
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {todaysProjects.map((project) => (
+              <Card
+                key={project.id}
+                className="flex flex-col items-center gap-4 bg-gradient-to-br from-slate-50 to-white sm:flex-row sm:justify-between"
+              >
+                <div className="text-center sm:text-left">
+                  <p className="text-xs text-slate-500">{project.customer.name}</p>
+                  <p className="text-lg font-bold text-slate-900">{project.name}</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <Link href={`/projects/${project.id}`} className="text-sm font-medium text-slate-500 underline">
+                    現場を開く
+                  </Link>
+                  <Link
+                    href={`/daily-reports/new?projectId=${project.id}`}
+                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-3xl text-white shadow-lg shadow-indigo-600/40 transition hover:scale-105"
+                    aria-label="AIに話す(日報作成)"
+                  >
+                    🎤
+                  </Link>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

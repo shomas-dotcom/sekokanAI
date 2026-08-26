@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { NewDailyReportForm } from "./NewDailyReportForm";
 import { Card } from "@/components/ui";
 
-export default async function NewDailyReportPage() {
+export default async function NewDailyReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ projectId?: string }>;
+}) {
+  const { projectId } = await searchParams;
   const user = await requireUser();
   const [projects, workItems] = await Promise.all([
     prisma.project.findMany({
@@ -41,6 +46,7 @@ export default async function NewDailyReportPage() {
             customerName: p.customer.name,
           }))}
           workItemLabels={workItems.map((w) => w.label)}
+          defaultProjectId={projects.some((p) => p.id === projectId) ? projectId : undefined}
         />
       </Card>
     </div>
