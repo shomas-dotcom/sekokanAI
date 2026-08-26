@@ -101,3 +101,26 @@ describe("draftKyItems (モック実装)", () => {
     expect(items).toEqual([{ risk: "", countermeasure: "" }]);
   });
 });
+
+describe("AI関数の異常系入力(空文字・記号のみ等でも例外を投げない)", () => {
+  it("draftDailyReportFromTextは空文字でも例外を投げず、全項目を確認候補にする", async () => {
+    const draft = await draftDailyReportFromText("");
+    expect(draft.workContent).toBeNull();
+    expect(draft.unclearItems.length).toBeGreaterThan(0);
+  });
+
+  it("draftQuoteItemsFromTextは空文字なら空配列を返す", async () => {
+    const items = await draftQuoteItemsFromText("", []);
+    expect(items).toEqual([]);
+  });
+
+  it("draftQuoteItemsFromTextは記号だけの行を渡しても例外を投げない", async () => {
+    const items = await draftQuoteItemsFromText("、、、\n,,,", []);
+    expect(Array.isArray(items)).toBe(true);
+  });
+
+  it("draftKyItemsは空文字でも例外を投げず空の1行を返す", async () => {
+    const items = await draftKyItems("");
+    expect(items).toEqual([{ risk: "", countermeasure: "" }]);
+  });
+});
