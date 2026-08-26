@@ -14,19 +14,21 @@ export default async function EditProjectPage({
   const { id } = await params;
   const user = await requireUser();
 
-  const [project, customers, quotes, contracts, invoices, employees, members] = await Promise.all([
-    prisma.project.findFirst({ where: { id, companyId: user.companyId } }),
-    prisma.customer.findMany({
-      where: { companyId: user.companyId },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
-    prisma.quote.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
-    prisma.contract.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
-    prisma.invoice.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
-    prisma.employee.findMany({ where: { companyId: user.companyId }, orderBy: { name: "asc" } }),
-    prisma.projectMember.findMany({ where: { projectId: id }, select: { employeeId: true } }),
-  ]);
+  const [project, customers, quotes, contracts, invoices, employees, members, kyActivities] =
+    await Promise.all([
+      prisma.project.findFirst({ where: { id, companyId: user.companyId } }),
+      prisma.customer.findMany({
+        where: { companyId: user.companyId },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      prisma.quote.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
+      prisma.contract.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
+      prisma.invoice.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
+      prisma.employee.findMany({ where: { companyId: user.companyId }, orderBy: { name: "asc" } }),
+      prisma.projectMember.findMany({ where: { projectId: id }, select: { employeeId: true } }),
+      prisma.kyActivity.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { activityDate: "desc" } }),
+    ]);
   if (!project) notFound();
   const assignedEmployeeIds = new Set(members.map((m) => m.employeeId));
 
@@ -46,7 +48,7 @@ export default async function EditProjectPage({
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-slate-900">この案件の書類(簡易工事台帳)</h2>
         </div>
-        <div className="mt-3 grid gap-4 sm:grid-cols-3">
+        <div className="mt-3 grid gap-4 sm:grid-cols-4">
           <DocList
             title="見積"
             items={quotes.map((q) => ({ id: q.id, label: q.title, href: `/quotes/${q.id}` }))}
@@ -70,7 +72,22 @@ export default async function EditProjectPage({
             }))}
             newHref="/invoices/new"
           />
+          <DocList
+            title="KY"
+            items={kyActivities.map((k) => ({
+              id: k.id,
+              label: k.activityDate.toLocaleDateString("ja-JP"),
+              href: `/ky/${k.id}`,
+            }))}
+            newHref={`/ky/new?projectId=${project.id}`}
+          />
         </div>
+        <Link
+          href={`/projects/${project.id}/safety-roster`}
+          className="mt-4 inline-block text-sm font-medium text-orange-700 underline"
+        >
+          作業員名簿・資格一覧(安全書類)を見る
+        </Link>
       </Card>
 
       <Card className="max-w-lg">

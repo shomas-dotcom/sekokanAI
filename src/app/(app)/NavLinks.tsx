@@ -13,6 +13,7 @@ const NAV = [
   { href: "/contracts", label: "契約" },
   { href: "/invoices", label: "請求" },
   { href: "/daily-reports", label: "日報" },
+  { href: "/ky", label: "KY" },
   { href: "/work-items", label: "作業内容マスタ" },
   { href: "/construction-plans", label: "施工計画書" },
   { href: "/account", label: "アカウント" },

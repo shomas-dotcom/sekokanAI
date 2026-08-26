@@ -72,6 +72,33 @@ model Company {
   workItemMasters           WorkItemMaster[]
   employees                 Employee[]
   rateMasterItems           RateMasterItem[]
+  kyActivities              KyActivity[]
+}
+
+enum KyStatus {
+  DRAFT // AIによる下書き(未承認)。人間が内容を捏造せず提案しているだけの状態
+  CONFIRMED // 現場責任者が内容を確認・承認済み
+}
+
+// 危険予知(KY)活動。AIは作業内容から一般的な危険ポイント・対策の候補を提案するのみで、
+// 現場責任者による確認・修正・承認を必須とする(依頼元の要件どおり、断定・捏造をしない)。
+model KyActivity {
+  id              String    @id @default(cuid())
+  companyId       String
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id])
+  activityDate    DateTime
+  workContent     String // 本日の作業内容(音声入力可)
+  itemsJson       String // [{ risk: string, countermeasure: string }] のJSON配列
+  status          KyStatus  @default(DRAFT)
+  confirmedByName String? // 承認した現場責任者名
+  confirmedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([projectId])
 }
 
 // 単価マスタの区分。原価集計(材料費/労務費/重機費/外注費/処分費/その他原価)への
@@ -272,6 +299,7 @@ model Project {
   dailyReports               DailyReport[]
   constructionPlans          ConstructionPlan[]
   members                    ProjectMember[]
+  kyActivities               KyActivity[]
 
   @@index([companyId])
   @@index([customerId])

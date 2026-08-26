@@ -41,7 +41,12 @@ export default async function NewConstructionPlanPage() {
       <h1 className="text-2xl font-bold tracking-tight text-slate-900">施工計画書を作成</h1>
       <Card className="max-w-lg">
         <NewPlanForm
-          projects={projects.map((p) => ({ id: p.id, label: `${p.customer.name} / ${p.name}` }))}
+          projects={projects.map((p) => ({
+            id: p.id,
+            label: `${p.customer.name} / ${p.name}`,
+            siteAgentName: p.siteAgentName,
+            chiefEngineerName: p.chiefEngineerName,
+          }))}
         />
       </Card>
     </div>

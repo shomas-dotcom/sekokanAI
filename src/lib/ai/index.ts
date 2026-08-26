@@ -209,6 +209,46 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
   };
 }
 
+export type KyItem = { risk: string; countermeasure: string };
+
+// 作業内容に含まれるキーワードから、一般的な危険ポイント・対策の候補を返す辞書。
+// 「安全確認できていないことを断定しない」ため、一致しなければ何も付け足さず
+// 呼び出し側で空欄(人間が入力する前提)として扱うこと。
+const KY_RULES: { keyword: string; risk: string; countermeasure: string }[] = [
+  { keyword: "バックホウ", risk: "重機との接触・巻き込まれ", countermeasure: "誘導員を配置し、作業半径内への立入りを禁止する" },
+  { keyword: "ユンボ", risk: "重機との接触・巻き込まれ", countermeasure: "誘導員を配置し、作業半径内への立入りを禁止する" },
+  { keyword: "クレーン", risk: "吊荷の落下・重機との接触", countermeasure: "作業半径内を立入禁止とし、合図者を配置する" },
+  { keyword: "掘削", risk: "土砂崩壊による埋没", countermeasure: "適切な勾配を確保し、必要に応じて土留めを設置する" },
+  { keyword: "型枠", risk: "墜落・転落、資材の落下", countermeasure: "足場の点検を行い、安全帯を使用する" },
+  { keyword: "足場", risk: "墜落・転落", countermeasure: "手すり・幅木を設置し、安全帯を使用する" },
+  { keyword: "高所", risk: "墜落・転落", countermeasure: "安全帯を着用し、要所に手すり・囲いを設置する" },
+  { keyword: "ダンプ", risk: "後退時の接触・巻き込まれ", countermeasure: "誘導員を配置し、後退時は必ず合図を確認する" },
+  { keyword: "電線", risk: "感電", countermeasure: "電力会社・関係者に確認し、絶縁防護措置を行う" },
+  { keyword: "交通", risk: "第三者・通行車両との接触", countermeasure: "交通誘導員を配置し、保安施設を設置する" },
+  { keyword: "舗装", risk: "高温の材料による火傷", countermeasure: "保護具を着用し、周囲への飛散に注意する" },
+  { keyword: "溶接", risk: "火傷・火災", countermeasure: "消火器を準備し、周囲の可燃物を除去する" },
+];
+
+/**
+ * 作業内容のテキストから、危険予知(KY)の候補をキーワード一致で提案する。
+ * 一致するキーワードが無い場合は空の1行を返す(「異常なし」等を勝手に作らない)。
+ * 返す内容は必ず現場責任者が確認・修正してから確定すること(REQUIREMENTS.md)。
+ */
+export async function draftKyItems(workContent: string): Promise<KyItem[]> {
+  const matched = KY_RULES.filter((r) => workContent.includes(r.keyword));
+  if (matched.length === 0) return [{ risk: "", countermeasure: "" }];
+
+  // 同じキーワード系統の重複(バックホウ/ユンボ等)を除いて返す
+  const seen = new Set<string>();
+  return matched
+    .filter((r) => {
+      if (seen.has(r.risk)) return false;
+      seen.add(r.risk);
+      return true;
+    })
+    .map((r) => ({ risk: r.risk, countermeasure: r.countermeasure }));
+}
+
 // 施工計画書の固定章立て(REQUIREMENTS.md 施工計画書機能の必須仕様)
 export const CONSTRUCTION_PLAN_SECTIONS: { key: string; title: string }[] = [
   { key: "overview", title: "工事概要" },

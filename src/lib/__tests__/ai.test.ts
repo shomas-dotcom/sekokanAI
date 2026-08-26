@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftDailyReportFromText, draftQuoteItemsFromText } from "@/lib/ai";
+import { draftDailyReportFromText, draftQuoteItemsFromText, draftKyItems } from "@/lib/ai";
 
 describe("draftDailyReportFromText (モック実装)", () => {
   it("依頼文の音声入力例から各項目を抽出し、聞き取れなかった項目はunclearItemsに積む", async () => {
@@ -80,5 +80,24 @@ describe("draftQuoteItemsFromText (モック実装)", () => {
   it("改行・読点区切りで複数項目に分ける", async () => {
     const items = await draftQuoteItemsFromText("掘削工\n残土処分、L型側溝設置", []);
     expect(items.map((i) => i.itemName)).toEqual(["掘削工", "残土処分", "L型側溝設置"]);
+  });
+});
+
+describe("draftKyItems (モック実装)", () => {
+  it("作業内容のキーワードから危険ポイント・対策の候補を提案する", async () => {
+    const items = await draftKyItems("バックホウで掘削し、ダンプで残土搬出する");
+    const risks = items.map((i) => i.risk);
+    expect(risks).toContain("重機との接触・巻き込まれ");
+    expect(risks).toContain("土砂崩壊による埋没");
+    expect(risks).toContain("後退時の接触・巻き込まれ");
+    // 対策が伴わない危険ポイントを作らない(必ず対をなす)
+    for (const item of items) {
+      expect(item.countermeasure.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("一致するキーワードが無い場合は空の1行を返す(「異常なし」等を勝手に作らない)", async () => {
+    const items = await draftKyItems("事務所で書類整理");
+    expect(items).toEqual([{ risk: "", countermeasure: "" }]);
   });
 });
