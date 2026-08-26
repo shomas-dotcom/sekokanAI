@@ -195,7 +195,12 @@ export default async function DashboardPage() {
       )}
 
       <Card>
-        <h2 className="font-semibold text-slate-900">はじめに</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-slate-900">はじめに</h2>
+          <Link href="/onboarding" className="text-xs font-medium text-orange-700 underline">
+            すべてのステップを見る
+          </Link>
+        </div>
         <ol className="mt-2 list-inside list-decimal space-y-1 text-sm text-slate-600">
           <li>
             <Link href="/customers/new" className="font-medium text-orange-700 underline">

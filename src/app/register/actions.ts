@@ -75,5 +75,5 @@ export async function registerAction(
   }
 
   await createSession(user.id);
-  redirect("/dashboard");
+  redirect("/onboarding");
 }

@@ -39,7 +39,16 @@ export default function RegisterPage() {
 
             <label className="flex items-start gap-2 text-sm text-slate-600">
               <input type="checkbox" name="agreed" className="mt-1 accent-amber-600" />
-              <span>利用規約・プライバシーポリシーに同意します。</span>
+              <span>
+                <Link href="/terms" target="_blank" className="text-orange-700 underline">
+                  利用規約
+                </Link>
+                ・
+                <Link href="/privacy" target="_blank" className="text-orange-700 underline">
+                  プライバシーポリシー
+                </Link>
+                に同意します。
+              </span>
             </label>
 
             {state?.error && (
