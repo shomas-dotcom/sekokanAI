@@ -5,13 +5,16 @@ import { redirect } from "next/navigation";
 import { requireUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { isStripeConfigured } from "@/lib/stripe";
 
 /**
- * デモ用のプラン切り替え。実際の決済は行わない(no-billing-without-confirmation)。
- * 管理者のみ実行可能。本番では決済サービスのWebhook等から更新する想定。
+ * デモ用のプラン切り替え。実際の決済は行わない。Stripe設定済みの環境では、
+ * 実際の契約状態と食い違う操作をさせないためこの関数自体を無効化する
+ * (画面側で隠すだけでなく、直接POSTされた場合にもここで必ず拒否する)。
  */
 export async function togglePlanAction() {
   const user = await requireAdmin();
+  if (isStripeConfigured()) redirect("/billing");
   const current = await prisma.company.findUniqueOrThrow({ where: { id: user.companyId } });
   const next = current.plan === "PREMIUM" ? "FREE" : "PREMIUM";
 

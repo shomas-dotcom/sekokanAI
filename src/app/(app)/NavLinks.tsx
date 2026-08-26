@@ -17,6 +17,7 @@ const NAV = [
   { href: "/work-items", label: "作業内容マスタ" },
   { href: "/construction-plans", label: "施工計画書" },
   { href: "/account", label: "アカウント" },
+  { href: "/billing", label: "ご契約" },
 ];
 
 export function NavLinks({ isAdmin }: { isAdmin: boolean }) {

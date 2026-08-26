@@ -42,6 +42,16 @@ model Company {
   defaultPaymentTerms       String? // 既定の支払条件(案件個別に上書き可能。例: 月末締め翌月末払い)
   defaultTaxRoundingMode    RoundingMode       @default(ROUND) // 消費税端数処理の既定値
   targetGrossProfitRate     Float? // 目標粗利率(0〜1の割合。例: 0.2 = 20%)。見積の粗利率がこれを下回ると警告表示する
+  stripeCustomerId          String?            @unique
+  stripeSubscriptionId      String?            @unique
+  // Stripeのsubscription.statusをそのまま保存する("trialing" | "active" | "past_due" |
+  // "canceled" | "unpaid" | "incomplete" | "incomplete_expired" | null=未契約)。
+  // 独自の変換をしないことで、Webhookとの対応関係を単純に保つ。
+  subscriptionStatus        String?
+  trialEndsAt               DateTime?
+  currentPeriodEnd          DateTime?
+  cancelAtPeriodEnd         Boolean            @default(false)
+  billingEvents             BillingEvent[]
   licenseNumber             String? // 建設業許可番号
   invoiceRegistrationNumber String? // 適格請求書発行事業者登録番号(インボイス制度)
   bankName                  String?
@@ -73,6 +83,20 @@ model Company {
   employees                 Employee[]
   rateMasterItems           RateMasterItem[]
   kyActivities              KyActivity[]
+}
+
+// Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
+// 請求履歴の表示にも使う。決済情報そのもの(カード番号等)は保持しない。
+model BillingEvent {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stripeEventId String   @unique
+  type          String // 例: "checkout.session.completed", "customer.subscription.updated"
+  summary       String? // 画面表示用の簡単な説明(例: "月額プラン契約開始")
+  createdAt     DateTime @default(now())
+
+  @@index([companyId])
 }
 
 enum KyStatus {

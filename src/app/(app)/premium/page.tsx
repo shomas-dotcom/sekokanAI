@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { isPremium } from "@/lib/premium";
+import { isStripeConfigured } from "@/lib/stripe";
 import { Card, Badge, Button } from "@/components/ui";
 import { PREMIUM_FEATURES } from "./features";
 import { togglePlanAction } from "./actions";
@@ -8,6 +9,7 @@ import { togglePlanAction } from "./actions";
 export default async function PremiumPage() {
   const user = await requireUser();
   const premium = isPremium(user.company);
+  const configured = isStripeConfigured();
 
   return (
     <div className="flex flex-col gap-6">
@@ -29,18 +31,24 @@ export default async function PremiumPage() {
               : "AIプレミアムにアップグレードすると下記機能が利用できます。"}
           </p>
         </div>
-        {user.role === "ADMIN" ? (
+        {user.role !== "ADMIN" ? (
+          <p className="text-xs text-indigo-600">プラン変更は管理者にご依頼ください。</p>
+        ) : configured ? (
+          <Link href="/billing">
+            <Button variant="ai">ご契約状況を見る</Button>
+          </Link>
+        ) : (
           <form action={togglePlanAction}>
             <Button variant={premium ? "secondary" : "ai"}>
               {premium ? "無料プランに戻す(デモ)" : "AIプレミアムを有効にする(デモ)"}
             </Button>
           </form>
-        ) : (
-          <p className="text-xs text-indigo-600">プラン変更は管理者にご依頼ください。</p>
         )}
       </Card>
       <p className="text-xs text-slate-400">
-        ※ デモ用のプラン切替です。実際の決済・請求は行われません(本番では決済サービス経由で更新します)。
+        {configured
+          ? "実際のご契約状況は「ご契約」画面でご確認いただけます。"
+          : "※ デモ用のプラン切替です。実際の決済・請求は行われません(Stripe設定後は「ご契約」画面から本申し込みができます)。"}
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">

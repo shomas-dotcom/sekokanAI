@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser, destroySession } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
+import { isStripeConfigured } from "@/lib/stripe";
 
 export async function requireUser() {
   const user = await getSessionUser();
@@ -13,6 +15,22 @@ export async function requireUser() {
   if (user.company.isSuspended) {
     await destroySession();
     redirect("/suspended");
+  }
+
+  // Stripe未設定(開発用の疑似トライアル)の場合のみ、ここで期限切れを判定する。
+  // Stripe設定済みの本番では、実際の状態変化はWebhookが更新するためここでは何もしない。
+  if (
+    !isStripeConfigured() &&
+    user.company.subscriptionStatus === "trialing" &&
+    user.company.trialEndsAt &&
+    user.company.trialEndsAt < new Date()
+  ) {
+    await prisma.company.update({
+      where: { id: user.companyId },
+      data: { subscriptionStatus: "canceled", plan: "FREE" },
+    });
+    user.company.subscriptionStatus = "canceled";
+    user.company.plan = "FREE";
   }
 
   return user;
