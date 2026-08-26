@@ -6,11 +6,17 @@ import { Card } from "@/components/ui";
 
 export default async function NewDailyReportPage() {
   const user = await requireUser();
-  const projects = await prisma.project.findMany({
-    where: { companyId: user.companyId },
-    include: { customer: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const [projects, workItems] = await Promise.all([
+    prisma.project.findMany({
+      where: { companyId: user.companyId },
+      include: { customer: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.workItemMaster.findMany({
+      where: { companyId: user.companyId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    }),
+  ]);
 
   if (projects.length === 0) {
     return (
@@ -31,8 +37,10 @@ export default async function NewDailyReportPage() {
         <NewDailyReportForm
           projects={projects.map((p) => ({
             id: p.id,
-            label: `${p.customer.name} / ${p.name}`,
+            name: p.name,
+            customerName: p.customer.name,
           }))}
+          workItemLabels={workItems.map((w) => w.label)}
         />
       </Card>
     </div>

@@ -26,7 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </form>
           </div>
         </div>
-        <NavLinks />
+        <NavLinks isAdmin={user.role === "ADMIN"} />
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 print:max-w-none print:p-0">
         {children}

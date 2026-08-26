@@ -8,16 +8,20 @@ const NAV = [
   { href: "/customers", label: "顧客" },
   { href: "/projects", label: "案件" },
   { href: "/quotes", label: "見積" },
+  { href: "/contracts", label: "契約" },
+  { href: "/invoices", label: "請求" },
   { href: "/daily-reports", label: "日報" },
+  { href: "/work-items", label: "作業内容マスタ" },
   { href: "/construction-plans", label: "施工計画書" },
 ];
 
-export function NavLinks() {
+export function NavLinks({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
+  const items = isAdmin ? [...NAV, { href: "/settings", label: "会社設定" }] : NAV;
 
   return (
     <nav className="mx-auto flex max-w-5xl items-center gap-1 overflow-x-auto px-4 pb-2 text-sm">
-      {NAV.map((item) => {
+      {items.map((item) => {
         const active = pathname.startsWith(item.href);
         return (
           <Link

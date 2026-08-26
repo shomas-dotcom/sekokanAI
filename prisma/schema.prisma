@@ -28,36 +28,49 @@ enum CompanyPlan {
 }
 
 model Company {
-  id                 String              @id @default(cuid())
-  name               String
-  address            String?
-  phone              String?
-  representativeName String?
-  licenseNumber      String? // 建設業許可番号
-  logoUrl            String?
-  plan               CompanyPlan         @default(FREE)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  users              User[]
-  customers          Customer[]
-  projects           Project[]
-  quotes             Quote[]
-  dailyReports       DailyReport[]
-  constructionPlans  ConstructionPlan[]
-  templates          Template[]
-  auditLogs          AuditLog[]
+  id                        String             @id @default(cuid())
+  name                      String
+  postalCode                String?
+  address                   String?
+  phone                     String?
+  fax                       String?
+  email                     String?
+  representativeName        String?
+  licenseNumber             String? // 建設業許可番号
+  invoiceRegistrationNumber String? // 適格請求書発行事業者登録番号(インボイス制度)
+  bankName                  String?
+  bankBranch                String?
+  bankAccountType           String? // 普通/当座
+  bankAccountNumber         String?
+  bankAccountHolder         String?
+  logoUrl                   String?
+  plan                      CompanyPlan        @default(FREE)
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  users                     User[]
+  customers                 Customer[]
+  projects                  Project[]
+  quotes                    Quote[]
+  contracts                 Contract[]
+  invoices                  Invoice[]
+  dailyReports              DailyReport[]
+  constructionPlans         ConstructionPlan[]
+  templates                 Template[]
+  auditLogs                 AuditLog[]
+  numberSequences           NumberSequence[]
+  workItemMasters           WorkItemMaster[]
 }
 
 model User {
-  id           String    @id @default(cuid())
+  id           String     @id @default(cuid())
   companyId    String
-  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  email        String    @unique
+  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email        String     @unique
   passwordHash String
   name         String
-  role         UserRole  @default(MEMBER)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  role         UserRole   @default(MEMBER)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
   auditLogs    AuditLog[]
   sessions     Session[]
 
@@ -104,22 +117,32 @@ enum ProjectStatus {
 }
 
 model Project {
-  id                String              @id @default(cuid())
-  companyId         String
-  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  customerId        String
-  customer          Customer            @relation(fields: [customerId], references: [id])
-  name              String
-  siteAddress       String?
-  orderingParty     String? // 発注者(自治体等)
-  status            ProjectStatus       @default(LEAD)
-  startDate         DateTime?
-  endDate           DateTime?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
-  quotes            Quote[]
-  dailyReports      DailyReport[]
-  constructionPlans ConstructionPlan[]
+  id                         String             @id @default(cuid())
+  companyId                  String
+  company                    Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customerId                 String
+  customer                   Customer           @relation(fields: [customerId], references: [id])
+  projectCode                String?            @unique // 工事番号(自動採番、既存データは後方互換のためnull許可)
+  name                       String
+  siteAddress                String?
+  orderingParty              String? // 発注者(自治体等)
+  status                     ProjectStatus      @default(LEAD)
+  startDate                  DateTime?
+  endDate                    DateTime?
+  managerName                String? // 自社担当者
+  siteAgentName              String? // 現場代理人
+  chiefEngineerName          String? // 主任技術者
+  contractAmountExcludingTax Int? // 契約金額(税抜、契約前は見積金額の目安として使用)
+  taxRatePercent             Int                @default(10)
+  paymentTerms               String? // 支払条件(例: 月末締め翌月末払い)
+  overview                   String? // 工事概要
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+  quotes                     Quote[]
+  contracts                  Contract[]
+  invoices                   Invoice[]
+  dailyReports               DailyReport[]
+  constructionPlans          ConstructionPlan[]
 
   @@index([companyId])
   @@index([customerId])
@@ -133,20 +156,23 @@ enum QuoteStatus {
 }
 
 model Quote {
-  id             String      @id @default(cuid())
-  companyId      String
-  company        Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  projectId      String
-  project        Project     @relation(fields: [projectId], references: [id])
-  title          String
-  status         QuoteStatus @default(DRAFT)
-  taxRatePercent Int         @default(10)
-  discountAmount Int         @default(0)
-  notes          String?
-  duplicatedFromId String?  // 複製元見積のID
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  items          QuoteItem[]
+  id               String      @id @default(cuid())
+  companyId        String
+  company          Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId        String
+  project          Project     @relation(fields: [projectId], references: [id])
+  estimateNumber   String?     @unique // 見積番号(自動採番、既存データは後方互換のためnull許可)
+  title            String
+  status           QuoteStatus @default(DRAFT)
+  taxRatePercent   Int         @default(10)
+  discountAmount   Int         @default(0)
+  expirationDate   DateTime? // 見積有効期限
+  notes            String?
+  duplicatedFromId String? // 複製元見積のID
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  items            QuoteItem[]
+  contracts        Contract[]
 
   @@index([companyId])
   @@index([projectId])
@@ -182,29 +208,146 @@ model QuoteItem {
 }
 
 model DailyReport {
-  id             String   @id @default(cuid())
-  companyId      String
-  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  projectId      String
-  project        Project  @relation(fields: [projectId], references: [id])
-  reportDate     DateTime
-  weather        String?
-  workerCount    Int?
-  workContent    String?
-  machinery      String?
-  quantityWorked String?
-  safetyNotes    String?
-  issues         String?
-  nextDayPlan    String?
-  rawVoiceInput  String? // 音声認識の元テキスト(監査用)
+  id               String   @id @default(cuid())
+  companyId        String
+  company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId        String
+  project          Project  @relation(fields: [projectId], references: [id])
+  reportDate       DateTime
+  weather          String?
+  workerCount      Int?
+  workContent      String?
+  machinery        String?
+  quantityWorked   String?
+  safetyNotes      String? // 安全確認
+  issues           String?
+  nextDayPlan      String?
+  rawVoiceInput    String? // 音声認識の元テキスト(監査用)
   // 音声から認識できず、確認が必要な項目。UIでは断定せず「確認候補」として表示する。
   // JSON文字列として [{ field: string, guess: string | null, note: string }] を保持
   unclearItemsJson String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+
+  // 2026-08-05追記(既存Excel日報の忠実再現+音声入力拡張)。既存データ後方互換のため全て任意。
+  foremanName      String? // 職長
+  vehicles         String? // 使用車両(machineryとは別枠)
+  materials        String? // 使用材料
+  subcontractors   String? // 協力会社
+  startTime        String? // 開始時間 "HH:mm"
+  endTime          String? // 終了時間 "HH:mm"
+  breakMinutes     Int? // 休憩時間(分)
+  overtimeMinutes  Int? // 残業時間(分)
+  dangerPrediction String? // 危険予知
+  remarks          String? // 備考
+  latitude         Float? // GPS取得時点の緯度
+  longitude        Float? // GPS取得時点の経度
+  capturedAddress  String? // GPSから逆ジオコーディングした取得時点の現場住所(スナップショット)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  photos       DailyReportPhoto[]
+  laborEntries DailyReportLaborEntry[]
+  ownItems     DailyReportOwnItem[]
+  partnerItems DailyReportPartnerItem[]
 
   @@index([companyId])
   @@index([projectId])
+}
+
+enum PhotoPhase {
+  BEFORE // 施工前
+  DURING // 施工中
+  AFTER // 施工後
+  UNKNOWN
+}
+
+// 現場写真。クラウドストレージ未契約([no-billing-without-confirmation])のため
+// SQLiteのBLOBとしてDB内保存するMVP措置。本番で大量・高解像度の写真を扱う場合は
+// 外部ストレージ(S3/R2等、要ユーザー確認・課金)への切替を要する(DEPLOYMENT.md参照)。
+model DailyReportPhoto {
+  id            String      @id @default(cuid())
+  dailyReportId String
+  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  companyId     String // テナント分離をこのテーブル単体でも効かせるため保持
+  data          Bytes
+  mimeType      String
+  // 施工前/中/後。AI自動判定は課金が発生するため今回は対象外 —
+  // 手動選択とし、アップロード順による初期値のみアプリ側で提案する。
+  phase         PhotoPhase  @default(UNKNOWN)
+  takenAt       DateTime? // EXIFのDateTimeOriginal、取得できなければアップロード時刻
+  caption       String? // ユーザー入力のコメント(AI自動生成は今回スコープ外)
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+
+  @@index([dailyReportId])
+  @@index([companyId])
+}
+
+// 原価集計表(既存Excel「日報ひな形」の氏名・単価・残業・職種表に対応)。
+// 単価は給与相当の機微情報のため、音声入力の対象にはせず手動入力のみとする。
+model DailyReportLaborEntry {
+  id            String      @id @default(cuid())
+  dailyReportId String
+  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  sortOrder     Int         @default(0)
+  workerName    String
+  unitPrice     Int? // 単価(日当)
+  overtimeHours Float?
+  jobType       String? // 職種
+
+  @@index([dailyReportId])
+}
+
+enum OwnItemKind {
+  VEHICLE_MACHINERY // 自社持込車両・機械
+  MATERIAL // 自社持込材料
+}
+
+// 原価集計表の「自社持込車両・機械」「自社持込材料」表
+// (元Excelでは同じ行範囲を左右2列組で共有しているが、DBではkindで区別する)
+model DailyReportOwnItem {
+  id            String      @id @default(cuid())
+  dailyReportId String
+  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  kind          OwnItemKind
+  sortOrder     Int         @default(0)
+  name          String
+  quantity      String?
+  amount        Int?
+
+  @@index([dailyReportId])
+}
+
+enum PartnerItemKind {
+  PARTNER_EQUIPMENT // 協力会社持込資機材
+  OTHER_EXPENSE // その他経費
+}
+
+// 原価集計表の「協力会社持込資機材」「その他経費」表
+model DailyReportPartnerItem {
+  id            String      @id @default(cuid())
+  dailyReportId String
+  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  kind          PartnerItemKind
+  sortOrder     Int         @default(0)
+  name          String
+  quantity      String?
+  unitPrice     Int?
+
+  @@index([dailyReportId])
+}
+
+// 作業内容マスタ(よく使う作業内容の候補。日報の作業内容欄で候補表示に使う)
+model WorkItemMaster {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  label     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
 }
 
 enum PlanSectionStatus {
@@ -215,19 +358,19 @@ enum PlanSectionStatus {
 }
 
 model ConstructionPlan {
-  id            String                     @id @default(cuid())
-  companyId     String
-  company       Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  projectId     String
-  project       Project                    @relation(fields: [projectId], references: [id])
-  templateId    String? // 発注者/自治体別テンプレート
-  template      Template?                  @relation(fields: [templateId], references: [id])
-  agentName     String? // 現場代理人(後から入力可)
-  supervisorName String? // 主任技術者(後から入力可)
-  isSubmissionReady Boolean @default(false) // 人間が最終確認するまでfalse
-  createdAt     DateTime                   @default(now())
-  updatedAt     DateTime                   @updatedAt
-  sections      ConstructionPlanSection[]
+  id                String                    @id @default(cuid())
+  companyId         String
+  company           Company                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId         String
+  project           Project                   @relation(fields: [projectId], references: [id])
+  templateId        String? // 発注者/自治体別テンプレート
+  template          Template?                 @relation(fields: [templateId], references: [id])
+  agentName         String? // 現場代理人(後から入力可)
+  supervisorName    String? // 主任技術者(後から入力可)
+  isSubmissionReady Boolean                   @default(false) // 人間が最終確認するまでfalse
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  sections          ConstructionPlanSection[]
 
   @@index([companyId])
   @@index([projectId])
@@ -236,17 +379,17 @@ model ConstructionPlan {
 // 施工計画書の各章(工事概要/施工方針/安全管理...) REQUIREMENTS.md #6 の必須仕様に対応:
 // 不足情報の明示・推測箇所の明示・元資料との対応・断定しない、をsection単位で保持する。
 model ConstructionPlanSection {
-  id              String            @id @default(cuid())
-  planId          String
-  plan            ConstructionPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
-  sectionKey      String // 例: "工事概要", "施工方針", "安全管理" 等の固定キー
-  title           String
-  sortOrder       Int               @default(0)
-  content         String?
-  status          PlanSectionStatus @default(NEEDS_INPUT)
-  missingInfoJson String? // 不足情報のリスト(JSON配列)
+  id               String            @id @default(cuid())
+  planId           String
+  plan             ConstructionPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  sectionKey       String // 例: "工事概要", "施工方針", "安全管理" 等の固定キー
+  title            String
+  sortOrder        Int               @default(0)
+  content          String?
+  status           PlanSectionStatus @default(NEEDS_INPUT)
+  missingInfoJson  String? // 不足情報のリスト(JSON配列)
   assumedItemsJson String? // 推測で埋めた箇所の明示(JSON配列)
-  sourceRefsJson  String? // 元資料(ページ/ファイル名等)との対応(JSON配列)
+  sourceRefsJson   String? // 元資料(ページ/ファイル名等)との対応(JSON配列)
 
   @@index([planId])
 }
@@ -259,14 +402,14 @@ enum TemplateKind {
 
 // 会社別・発注者別のテンプレート(価格表示のひな形、施工計画書の章立てなど)
 model Template {
-  id                String              @id @default(cuid())
+  id                String             @id @default(cuid())
   companyId         String
-  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   kind              TemplateKind
   name              String
   configJson        String // テンプレートごとの設定(章立て・既定文言等)をJSONで保持
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
   constructionPlans ConstructionPlan[]
 
   @@index([companyId])
@@ -287,4 +430,136 @@ model AuditLog {
 
   @@index([companyId])
   @@index([userId])
+}
+
+// 契約書・見積書・請求書の自動採番(会社×書類種別×年度で連番)。
+// 同時操作でも番号が重複しないよう、採番時は必ずトランザクション内でupdate/createする(src/lib/numbering.ts)。
+model NumberSequence {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  docType    String // "PROJECT" | "ESTIMATE" | "CONTRACT" | "INVOICE"
+  year       Int
+  lastNumber Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([companyId, docType, year])
+}
+
+// 消費税額の端数処理方法(REQUIREMENTS.md/税務処理要件)
+enum RoundingMode {
+  FLOOR // 切り捨て
+  ROUND // 四捨五入
+  CEIL // 切り上げ
+}
+
+enum ContractStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+// 工事請負契約書。案件・見積情報から自動反映して作成する(REQUIREMENTS.md #9)。
+// 法的有効性を保証するものではなく一般的なひな形である旨を画面上に必ず表示する。
+// confirm(契約確定)時にconfirmedSnapshotJsonへ内容を保存し、以後projectやquoteが
+// 変更されても確定済み契約書の内容は変わらないようにする。
+model Contract {
+  id                         String         @id @default(cuid())
+  companyId                  String
+  company                    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId                  String
+  project                    Project        @relation(fields: [projectId], references: [id])
+  quoteId                    String? // 参照元見積(任意)
+  quote                      Quote?         @relation(fields: [quoteId], references: [id])
+  contractNumber             String         @unique
+  contractDate               DateTime
+  contractAmountExcludingTax Int
+  taxRatePercent             Int            @default(10)
+  taxAmount                  Int
+  contractAmountIncludingTax Int
+  roundingMode               RoundingMode   @default(ROUND)
+  startDate                  DateTime?
+  endDate                    DateTime?
+  paymentTerms               String?
+  warrantyTerms              String? // 瑕疵・契約不適合対応
+  delayTerms                 String? // 工期変更・遅延時の対応
+  cancellationTerms          String? // 契約解除条件
+  specialTerms               String? // 特約事項
+  clausesJson                String // 基本条項本文(JSON配列、章ごとに編集可能)
+  status                     ContractStatus @default(DRAFT)
+  version                    Int            @default(1)
+  confirmedSnapshotJson      String? // 確定時点のスナップショット(JSON)
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+  invoices                   Invoice[]
+
+  @@index([companyId])
+  @@index([projectId])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  CANCELLED
+}
+
+enum BillingType {
+  FULL // 全額請求
+  DEPOSIT // 着手金
+  PROGRESS // 中間金/出来高請求
+  PARTIAL // 一部請求
+  FINAL // 完成時請求
+}
+
+// 請求書。契約書・案件情報から作成する(REQUIREMENTS.md #10)。
+// 累計請求額が契約金額を超える場合は保存できないようにサーバー側で必ず検証する(src/lib/invoiceCalc.ts)。
+// issue(発行)時にissuedSnapshotJsonへ内容を保存し、以後の変更を防ぐ。
+model Invoice {
+  id                     String        @id @default(cuid())
+  companyId              String
+  company                Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId              String
+  project                Project       @relation(fields: [projectId], references: [id])
+  contractId             String?
+  contract               Contract?     @relation(fields: [contractId], references: [id])
+  invoiceNumber          String        @unique
+  issueDate              DateTime
+  dueDate                DateTime?
+  billingType            BillingType   @default(FULL)
+  billingPercentage      Float?
+  previousBilledAmount   Int           @default(0)
+  currentBilledAmount    Int           @default(0)
+  cumulativeBilledAmount Int           @default(0)
+  remainingAmount        Int           @default(0)
+  subtotal               Int           @default(0)
+  taxRatePercent         Int           @default(10)
+  taxAmount              Int           @default(0)
+  total                  Int           @default(0)
+  roundingMode           RoundingMode  @default(ROUND)
+  status                 InvoiceStatus @default(DRAFT)
+  notes                  String?
+  issuedSnapshotJson     String? // 発行時点のスナップショット(JSON)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  items                  InvoiceItem[]
+
+  @@index([companyId])
+  @@index([projectId])
+  @@index([contractId])
+}
+
+model InvoiceItem {
+  id        String  @id @default(cuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  sortOrder Int     @default(0)
+  itemName  String
+  spec      String?
+  quantity  Float
+  unit      String
+  unitPrice Int
+  remarks   String?
+
+  @@index([invoiceId])
 }

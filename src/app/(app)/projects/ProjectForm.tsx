@@ -4,16 +4,33 @@ import { useActionState } from "react";
 import type { ProjectFormState } from "./actions";
 import { STATUS_LABEL } from "./statusLabel";
 import type { ProjectStatus } from "@/generated/prisma/enums";
-import { Input, Select, Button, FieldLabel } from "@/components/ui";
+import { Input, Select, Textarea, Button, FieldLabel } from "@/components/ui";
 
 type Project = {
   id: string;
   customerId: string;
+  projectCode?: string | null;
   name: string;
   siteAddress: string | null;
   orderingParty: string | null;
   status: ProjectStatus;
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
+  managerName?: string | null;
+  siteAgentName?: string | null;
+  chiefEngineerName?: string | null;
+  contractAmountExcludingTax?: number | null;
+  taxRatePercent?: number;
+  paymentTerms?: string | null;
+  overview?: string | null;
 };
+
+function toDateInputValue(value?: Date | string | null): string {
+  if (!value) return "";
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
 
 export function ProjectForm({
   action,
@@ -32,6 +49,10 @@ export function ProjectForm({
     <form action={formAction} className="flex flex-col gap-4">
       {project && <input type="hidden" name="id" value={project.id} />}
 
+      {project?.projectCode && (
+        <p className="text-xs text-slate-500">工事番号: {project.projectCode}</p>
+      )}
+
       <FieldLabel label="顧客" required>
         <Select name="customerId" required defaultValue={project?.customerId ?? ""}>
           <option value="" disabled>
@@ -45,17 +66,63 @@ export function ProjectForm({
         </Select>
       </FieldLabel>
 
-      <FieldLabel label="案件名" required>
+      <FieldLabel label="工事名" required>
         <Input name="name" required defaultValue={project?.name} />
       </FieldLabel>
 
-      <FieldLabel label="現場住所">
+      <FieldLabel label="工事場所">
         <Input name="siteAddress" defaultValue={project?.siteAddress ?? ""} />
       </FieldLabel>
 
       <FieldLabel label="発注者">
         <Input name="orderingParty" defaultValue={project?.orderingParty ?? ""} />
       </FieldLabel>
+
+      <FieldLabel label="工事概要">
+        <Textarea name="overview" rows={2} defaultValue={project?.overview ?? ""} />
+      </FieldLabel>
+
+      <div className="grid grid-cols-2 gap-4">
+        <FieldLabel label="工期(着手)">
+          <Input type="date" name="startDate" defaultValue={toDateInputValue(project?.startDate)} />
+        </FieldLabel>
+        <FieldLabel label="工期(完成)">
+          <Input type="date" name="endDate" defaultValue={toDateInputValue(project?.endDate)} />
+        </FieldLabel>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <FieldLabel label="契約金額(税抜・目安)">
+          <Input
+            type="number"
+            name="contractAmountExcludingTax"
+            defaultValue={project?.contractAmountExcludingTax ?? ""}
+          />
+        </FieldLabel>
+        <FieldLabel label="消費税率(%)">
+          <Input type="number" name="taxRatePercent" defaultValue={project?.taxRatePercent ?? 10} />
+        </FieldLabel>
+      </div>
+
+      <FieldLabel label="支払条件">
+        <Input
+          name="paymentTerms"
+          defaultValue={project?.paymentTerms ?? ""}
+          placeholder="例: 月末締め翌月末払い"
+        />
+      </FieldLabel>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <FieldLabel label="自社担当者">
+          <Input name="managerName" defaultValue={project?.managerName ?? ""} />
+        </FieldLabel>
+        <FieldLabel label="現場代理人">
+          <Input name="siteAgentName" defaultValue={project?.siteAgentName ?? ""} />
+        </FieldLabel>
+        <FieldLabel label="主任技術者">
+          <Input name="chiefEngineerName" defaultValue={project?.chiefEngineerName ?? ""} />
+        </FieldLabel>
+      </div>
 
       <FieldLabel label="ステータス">
         <Select name="status" defaultValue={project?.status ?? "LEAD"}>

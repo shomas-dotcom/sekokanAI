@@ -37,7 +37,10 @@ export default async function ProjectsPage() {
                 <p className="font-semibold text-slate-900">{p.name}</p>
                 <Badge>{STATUS_LABEL[p.status]}</Badge>
               </div>
-              <p className="mt-1 text-sm text-slate-500">{p.customer.name}</p>
+              <p className="mt-1 text-sm text-slate-500">
+                {p.projectCode ? `${p.projectCode} / ` : ""}
+                {p.customer.name}
+              </p>
               {p.siteAddress && <p className="mt-1 text-xs text-slate-400">{p.siteAddress}</p>}
             </Link>
           ))}

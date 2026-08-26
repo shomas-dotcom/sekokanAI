@@ -23,6 +23,13 @@
 6. デプロイ後、[TEST_PLAN.md](./TEST_PLAN.md) のスモークテスト(ログイン・見積作成・PDF出力)を本番URLで実施する
 7. 本番公開前の確認事項一覧([RISK_REGISTER.md](./RISK_REGISTER.md))を消込む
 
+## 既知の制約(日報の現場写真)
+
+現場写真(`DailyReportPhoto`)は、クラウドストレージ未契約([no-billing-without-confirmation])
+のためSQLite/本番Postgres内にBLOBとして保存するMVP措置を取っている。大量・高解像度の写真を
+長期間扱う運用になった場合は、外部ストレージ(S3/Cloudflare R2等)への切替を検討すること。
+切替は要ユーザー確認(新規の課金発生のため)。
+
 ## ロールバック手順
 
 1. デプロイ先の管理画面から直前の正常デプロイに切り戻す(Vercel等は過去デプロイへのInstant Rollback機能を持つ)

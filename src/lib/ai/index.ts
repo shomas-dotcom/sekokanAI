@@ -45,20 +45,26 @@ export type DailyReportDraft = {
   workContent: string | null;
   quantityWorked: string | null;
   safetyNotes: string | null;
+  // 2026-08-05追記(既存Excel日報の忠実再現+音声入力拡張)
+  foremanName: string | null;
+  vehicles: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  dangerPrediction: string | null;
+  nextDayPlan: string | null;
   unclearItems: { field: string; note: string }[];
 };
 
 const WEATHER_WORDS = ["晴れ", "曇り", "雨", "雪", "晴天", "曇天"];
-const MACHINERY_WORDS = [
-  "バックホウ",
-  "ブルドーザー",
-  "ダンプ",
-  "ダンプトラック",
-  "クレーン",
-  "ローラー",
-  "0.25BH",
-  "0.45BH",
-];
+const MACHINERY_WORDS = ["バックホウ", "ブルドーザー", "クレーン", "ローラー", "プレート", "0.25BH", "0.45BH"];
+// 使用車両は使用機械(施工用重機)とは別枠として扱う(依頼項目「使用機械」「使用車両」を分けるため)
+const VEHICLE_WORDS = ["ダンプ", "ダンプトラック", "4トンダンプ", "2トンダンプ", "軽トラ", "トラック"];
+
+/** 「8時」「17時」等の発話を "HH:mm" 形式へ変換する */
+function toHHMM(hourText: string): string {
+  const hour = Number(hourText);
+  return `${String(hour).padStart(2, "0")}:00`;
+}
 
 /**
  * 音声入力(または自由記述)テキストから日報の構造化フィールドを抽出する下書きを作成する。
@@ -90,6 +96,9 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
   const foundMachinery = MACHINERY_WORDS.filter((m) => rawText.includes(m));
   const machinery = foundMachinery.length > 0 ? foundMachinery.join("、") : null;
 
+  const foundVehicles = VEHICLE_WORDS.filter((v) => rawText.includes(v));
+  const vehicles = foundVehicles.length > 0 ? foundVehicles.join("、") : null;
+
   const quantityMatches = [...rawText.matchAll(/(\d+(?:\.\d+)?)\s*(立米|m3|m²|㎡|m)/g)];
   const quantityWorked =
     quantityMatches.length > 0
@@ -100,6 +109,27 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
   const safetyNotes = hasNoIncident ? "特に異常なし" : null;
   if (!hasNoIncident) unclearItems.push({ field: "安全事項", note: "音声からは特定できませんでした" });
 
+  const foremanMatch =
+    rawText.match(/職長は?([^\s、。]+)/) ?? rawText.match(/([^\s、。]+)が職長/);
+  const foremanName = foremanMatch ? foremanMatch[1] : null;
+  if (!foremanName) unclearItems.push({ field: "職長", note: "音声からは特定できませんでした" });
+
+  const startMatch = rawText.match(/(\d{1,2})時\s*(?:開始|から)/);
+  const startTime = startMatch ? toHHMM(startMatch[1]) : null;
+  if (!startTime) unclearItems.push({ field: "開始時間", note: "音声からは特定できませんでした" });
+
+  const endMatch = rawText.match(/(\d{1,2})時\s*(?:終了|まで)/);
+  const endTime = endMatch ? toHHMM(endMatch[1]) : null;
+  if (!endTime) unclearItems.push({ field: "終了時間", note: "音声からは特定できませんでした" });
+
+  const dangerMatch = rawText.match(/危険(?:箇所|予知)は?([^。]+)/);
+  const dangerPrediction = dangerMatch ? dangerMatch[1].trim() : null;
+  if (!dangerPrediction) unclearItems.push({ field: "危険予知", note: "音声からは特定できませんでした" });
+
+  const nextDayMatch = rawText.match(/(?:翌日|明日)は?([^。]+)/);
+  const nextDayPlan = nextDayMatch ? nextDayMatch[1].trim() : null;
+  if (!nextDayPlan) unclearItems.push({ field: "翌日の予定", note: "音声からは特定できませんでした" });
+
   return {
     siteName,
     weather,
@@ -108,6 +138,12 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
     workContent: rawText.trim() || null,
     quantityWorked,
     safetyNotes,
+    foremanName,
+    vehicles,
+    startTime,
+    endTime,
+    dangerPrediction,
+    nextDayPlan,
     unclearItems,
   };
 }
