@@ -41,6 +41,7 @@ function readForm(formData: FormData) {
     name: String(formData.get("name") ?? "").trim(),
     siteAddress: String(formData.get("siteAddress") ?? "").trim() || null,
     orderingParty: String(formData.get("orderingParty") ?? "").trim() || null,
+    primeContractorName: String(formData.get("primeContractorName") ?? "").trim() || null,
     status: STATUSES.includes(status) ? status : "LEAD",
     startDate,
     endDate,
@@ -125,6 +126,40 @@ export async function updateProjectAction(
 
   revalidatePath("/projects");
   redirect("/projects");
+}
+
+export async function updateProjectMembersAction(formData: FormData) {
+  const user = await requireUser();
+  const projectId = String(formData.get("projectId") ?? "");
+
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, companyId: user.companyId },
+  });
+  if (!project) return;
+
+  const employeeIds = formData.getAll("employeeId").map(String);
+  // 選択された従業員が自社所属であることを確認してから割り当てる(他社の従業員を紐付けられないように)
+  const validEmployees = await prisma.employee.findMany({
+    where: { id: { in: employeeIds }, companyId: user.companyId },
+    select: { id: true },
+  });
+
+  await prisma.$transaction([
+    prisma.projectMember.deleteMany({ where: { projectId } }),
+    prisma.projectMember.createMany({
+      data: validEmployees.map((e) => ({ projectId, employeeId: e.id })),
+    }),
+  ]);
+
+  await logAction({
+    companyId: user.companyId,
+    userId: user.id,
+    action: "project.updateMembers",
+    targetType: "Project",
+    targetId: projectId,
+  });
+
+  revalidatePath(`/projects/${projectId}`);
 }
 
 export async function deleteProjectAction(formData: FormData) {

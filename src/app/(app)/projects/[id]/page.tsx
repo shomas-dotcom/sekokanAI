@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ProjectForm } from "../ProjectForm";
-import { updateProjectAction, deleteProjectAction } from "../actions";
+import { updateProjectAction, deleteProjectAction, updateProjectMembersAction } from "../actions";
 import { Card, Button } from "@/components/ui";
 
 export default async function EditProjectPage({
@@ -14,7 +14,7 @@ export default async function EditProjectPage({
   const { id } = await params;
   const user = await requireUser();
 
-  const [project, customers, quotes, contracts, invoices] = await Promise.all([
+  const [project, customers, quotes, contracts, invoices, employees, members] = await Promise.all([
     prisma.project.findFirst({ where: { id, companyId: user.companyId } }),
     prisma.customer.findMany({
       where: { companyId: user.companyId },
@@ -24,8 +24,11 @@ export default async function EditProjectPage({
     prisma.quote.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
     prisma.contract.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
     prisma.invoice.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
+    prisma.employee.findMany({ where: { companyId: user.companyId }, orderBy: { name: "asc" } }),
+    prisma.projectMember.findMany({ where: { projectId: id }, select: { employeeId: true } }),
   ]);
   if (!project) notFound();
+  const assignedEmployeeIds = new Set(members.map((m) => m.employeeId));
 
   return (
     <div className="flex flex-col gap-4">
@@ -68,6 +71,40 @@ export default async function EditProjectPage({
             newHref="/invoices/new"
           />
         </div>
+      </Card>
+
+      <Card className="max-w-lg">
+        <h2 className="font-semibold text-slate-900">作業員</h2>
+        {employees.length === 0 ? (
+          <p className="mt-2 text-sm text-slate-500">
+            まだ従業員が登録されていません。
+            <Link href="/employees/new" className="ml-1 text-orange-700 underline">
+              従業員を登録する
+            </Link>
+          </p>
+        ) : (
+          <form action={updateProjectMembersAction} className="mt-2 flex flex-col gap-2">
+            <input type="hidden" name="projectId" value={project.id} />
+            <div className="flex flex-col gap-1.5">
+              {employees.map((emp) => (
+                <label key={emp.id} className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    name="employeeId"
+                    value={emp.id}
+                    defaultChecked={assignedEmployeeIds.has(emp.id)}
+                    className="accent-amber-600"
+                  />
+                  {emp.name}
+                  {emp.position && <span className="text-slate-400">({emp.position})</span>}
+                </label>
+              ))}
+            </div>
+            <Button type="submit" variant="secondary" className="w-fit">
+              保存する
+            </Button>
+          </form>
+        )}
       </Card>
 
       <form action={deleteProjectAction} className="max-w-lg">

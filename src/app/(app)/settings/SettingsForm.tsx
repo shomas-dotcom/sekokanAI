@@ -2,7 +2,13 @@
 
 import { useActionState } from "react";
 import type { SettingsFormState } from "./actions";
-import { Input, Button, FieldLabel } from "@/components/ui";
+import { Input, Select, Button, FieldLabel } from "@/components/ui";
+
+const ROUNDING_MODE_LABEL: Record<string, string> = {
+  FLOOR: "切り捨て",
+  ROUND: "四捨五入",
+  CEIL: "切り上げ",
+};
 
 type Company = {
   name: string;
@@ -14,6 +20,9 @@ type Company = {
   representativeName: string | null;
   industry: string | null;
   employeeCount: number | null;
+  closingDay: number | null;
+  defaultPaymentTerms: string | null;
+  defaultTaxRoundingMode: string;
   licenseNumber: string | null;
   invoiceRegistrationNumber: string | null;
   bankName: string | null;
@@ -52,6 +61,32 @@ export function SettingsForm({
             min={0}
             defaultValue={company.employeeCount ?? ""}
           />
+        </FieldLabel>
+        <FieldLabel label="締日">
+          <Input
+            name="closingDay"
+            type="number"
+            min={1}
+            max={31}
+            defaultValue={company.closingDay ?? ""}
+            placeholder="例: 末日締めは31"
+          />
+        </FieldLabel>
+        <FieldLabel label="支払条件(既定)">
+          <Input
+            name="defaultPaymentTerms"
+            defaultValue={company.defaultPaymentTerms ?? ""}
+            placeholder="例: 月末締め翌月末払い"
+          />
+        </FieldLabel>
+        <FieldLabel label="消費税の端数処理">
+          <Select name="defaultTaxRoundingMode" defaultValue={company.defaultTaxRoundingMode}>
+            {Object.entries(ROUNDING_MODE_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
         </FieldLabel>
         <FieldLabel label="郵便番号">
           <Input name="postalCode" defaultValue={company.postalCode ?? ""} placeholder="123-4567" />

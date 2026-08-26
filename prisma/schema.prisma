@@ -38,6 +38,9 @@ model Company {
   representativeName        String?
   industry                  String? // 業種(例: 土木、外構、舗装、造成)
   employeeCount             Int? // 従業員数
+  closingDay                Int? // 締日(1〜31。月末締めの場合は31を入れる運用とする)
+  defaultPaymentTerms       String? // 既定の支払条件(案件個別に上書き可能。例: 月末締め翌月末払い)
+  defaultTaxRoundingMode    RoundingMode       @default(ROUND) // 消費税端数処理の既定値
   licenseNumber             String? // 建設業許可番号
   invoiceRegistrationNumber String? // 適格請求書発行事業者登録番号(インボイス制度)
   bankName                  String?
@@ -66,6 +69,64 @@ model Company {
   auditLogs                 AuditLog[]
   numberSequences           NumberSequence[]
   workItemMasters           WorkItemMaster[]
+  employees                 Employee[]
+}
+
+enum EmploymentType {
+  REGULAR // 正社員
+  PART_TIME // パート・アルバイト
+  SUBCONTRACTOR // 一人親方・協力会社
+  OTHER
+}
+
+// 従業員マスタ。氏名・資格等は機微情報を含み得るため、AI APIへは送信しない
+// (REQUIREMENTS.md/SECURITY.mdの個人情報方針を踏襲)。
+model Employee {
+  id             String                  @id @default(cuid())
+  companyId      String
+  company        Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  nameKana       String? // フリガナ
+  position       String? // 役職
+  email          String?
+  phone          String?
+  employmentType EmploymentType          @default(REGULAR)
+  hireDate       DateTime? // 入社日
+  notes          String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  qualifications EmployeeQualification[]
+  projectMembers ProjectMember[]
+
+  @@index([companyId])
+}
+
+// 保有資格。資格ごとに有効期限を持たせ、期限が近いものを一覧・警告できるようにする。
+model EmployeeQualification {
+  id         String    @id @default(cuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  name       String // 資格名(例: 玉掛け技能講習、車両系建設機械)
+  expiresAt  DateTime? // 有効期限。期限の定めがない資格はnull
+  notes      String?
+  createdAt  DateTime  @default(now())
+
+  @@index([employeeId])
+}
+
+// 現場に割り当てられた作業員(Employeeマスタとの中間テーブル)
+model ProjectMember {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  role       String? // この現場での役割(任意)
+  createdAt  DateTime @default(now())
+
+  @@unique([projectId, employeeId])
+  @@index([projectId])
+  @@index([employeeId])
 }
 
 model User {
@@ -153,6 +214,7 @@ model Project {
   name                       String
   siteAddress                String?
   orderingParty              String? // 発注者(自治体等)
+  primeContractorName        String? // 元請(自社が下請の場合の元請会社名)
   status                     ProjectStatus      @default(LEAD)
   startDate                  DateTime?
   endDate                    DateTime?
@@ -170,6 +232,7 @@ model Project {
   invoices                   Invoice[]
   dailyReports               DailyReport[]
   constructionPlans          ConstructionPlan[]
+  members                    ProjectMember[]
 
   @@index([companyId])
   @@index([customerId])

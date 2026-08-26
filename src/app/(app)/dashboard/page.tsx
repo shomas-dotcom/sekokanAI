@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui";
+import { isExpired, isExpiringSoon } from "@/lib/qualifications";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -23,6 +24,7 @@ export default async function DashboardPage() {
     monthlyInvoiceAgg,
     monthlyDailyReportCount,
     monthlyOvertimeAgg,
+    expiringQualifications,
   ] = await Promise.all([
     prisma.customer.count({ where: { companyId } }),
     prisma.project.count({ where: { companyId } }),
@@ -44,7 +46,15 @@ export default async function DashboardPage() {
       where: { companyId, reportDate: { gte: monthStart, lt: monthEnd } },
       _sum: { overtimeMinutes: true },
     }),
+    prisma.employeeQualification.findMany({
+      where: { expiresAt: { not: null }, employee: { companyId } },
+      include: { employee: { select: { id: true, name: true } } },
+      orderBy: { expiresAt: "asc" },
+    }),
   ]);
+  const soonOrExpiredQualifications = expiringQualifications.filter(
+    (q) => isExpired(q.expiresAt) || isExpiringSoon(q.expiresAt)
+  );
   const unbilledContractCount = confirmedContractCount - contractsWithIssuedInvoice;
   const monthlyBilledAmount = monthlyInvoiceAgg._sum.total ?? 0;
   const monthlyOvertimeHours = Math.round(((monthlyOvertimeAgg._sum.overtimeMinutes ?? 0) / 60) * 10) / 10;
@@ -106,6 +116,23 @@ export default async function DashboardPage() {
           <p className="mt-1 text-3xl font-bold text-slate-900">{monthlyOvertimeHours}時間</p>
         </Card>
       </div>
+
+      {soonOrExpiredQualifications.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50">
+          <h2 className="font-semibold text-amber-800">⚠ 資格の有効期限が近い従業員がいます</h2>
+          <ul className="mt-2 flex flex-col gap-1 text-sm text-amber-800">
+            {soonOrExpiredQualifications.map((q) => (
+              <li key={q.id}>
+                <Link href={`/employees/${q.employee.id}`} className="underline">
+                  {q.employee.name}
+                </Link>
+                : {q.name}(期限 {q.expiresAt?.toLocaleDateString("ja-JP")}
+                {isExpired(q.expiresAt) ? " ・期限切れ" : ""})
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card>
         <h2 className="font-semibold text-slate-900">はじめに</h2>

@@ -13,6 +13,7 @@ type Project = {
   name: string;
   siteAddress: string | null;
   orderingParty: string | null;
+  primeContractorName?: string | null;
   status: ProjectStatus;
   startDate?: Date | string | null;
   endDate?: Date | string | null;
@@ -74,9 +75,14 @@ export function ProjectForm({
         <Input name="siteAddress" defaultValue={project?.siteAddress ?? ""} />
       </FieldLabel>
 
-      <FieldLabel label="発注者">
-        <Input name="orderingParty" defaultValue={project?.orderingParty ?? ""} />
-      </FieldLabel>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <FieldLabel label="発注者">
+          <Input name="orderingParty" defaultValue={project?.orderingParty ?? ""} />
+        </FieldLabel>
+        <FieldLabel label="元請(自社が下請の場合)">
+          <Input name="primeContractorName" defaultValue={project?.primeContractorName ?? ""} />
+        </FieldLabel>
+      </div>
 
       <FieldLabel label="工事概要">
         <Textarea name="overview" rows={2} defaultValue={project?.overview ?? ""} />
