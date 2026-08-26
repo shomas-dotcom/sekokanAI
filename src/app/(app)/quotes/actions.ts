@@ -7,7 +7,24 @@ import { isPremium } from "@/lib/premium";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { draftQuoteItemsFromText } from "@/lib/ai";
-import type { PriceSource } from "@/generated/prisma/enums";
+import type { PriceSource, RateCategory } from "@/generated/prisma/enums";
+
+const RATE_CATEGORIES: RateCategory[] = [
+  "LABOR",
+  "FOREMAN_LABOR",
+  "MACHINERY",
+  "DUMP_TRUCK",
+  "READY_MIX_CONCRETE",
+  "CRUSHED_STONE",
+  "SOIL_DISPOSAL",
+  "ASPHALT",
+  "CONCRETE_PRODUCT",
+  "BLOCK",
+  "FORMWORK",
+  "SUBCONTRACT",
+  "OVERHEAD",
+  "OTHER",
+];
 
 export type QuoteFormState = { error?: string } | undefined;
 
@@ -32,7 +49,12 @@ export async function createQuoteAction(
   });
   if (!project) return { error: "案件が見つかりません。" };
 
-  const draftItems = freeText ? await draftQuoteItemsFromText(freeText) : [];
+  const rateMasterItems = freeText
+    ? await prisma.rateMasterItem.findMany({ where: { companyId: user.companyId } })
+    : [];
+  const draftItems = freeText
+    ? await draftQuoteItemsFromText(freeText, rateMasterItems)
+    : [];
 
   const quote = await prisma.quote.create({
     data: {
@@ -46,9 +68,15 @@ export async function createQuoteAction(
           spec: item.spec,
           quantity: item.quantity,
           unit: item.unit,
-          unitPrice: 0,
-          priceSource: "AI_ESTIMATE" as PriceSource,
-          remarks: "AIによる下書き(要確認・単価は参考値ではなく未設定)",
+          unitPrice: item.matchedRateItemId ? (item.unitPriceHint ?? 0) : 0,
+          costPrice: item.matchedRateItemId ? item.costPriceHint : null,
+          costCategory: item.matchedRateItemId
+            ? (item.categoryHint as RateCategory)
+            : null,
+          priceSource: item.matchedRateItemId ? "COMPANY_RATE" : ("AI_ESTIMATE" as PriceSource),
+          remarks: item.matchedRateItemId
+            ? "単価マスタから自動反映(要確認)"
+            : "単価不明(要確認・単価マスタに未登録)",
         })),
       },
     },
@@ -148,6 +176,7 @@ export async function duplicateQuoteAction(formData: FormData) {
           unitPrice: item.unitPrice,
           priceSource: item.priceSource,
           costPrice: item.costPrice,
+          costCategory: item.costCategory,
           laborUnits: item.laborUnits,
           machinery: item.machinery,
           materials: item.materials,
@@ -173,6 +202,8 @@ export async function duplicateQuoteAction(formData: FormData) {
 
 function readItemForm(formData: FormData) {
   const priceSource = String(formData.get("priceSource") ?? "MANUAL") as PriceSource;
+  const costCategoryRaw = String(formData.get("costCategory") ?? "").trim();
+  const costPriceRaw = String(formData.get("costPrice") ?? "").trim();
   return {
     itemName: String(formData.get("itemName") ?? "").trim(),
     spec: String(formData.get("spec") ?? "").trim() || null,
@@ -180,6 +211,10 @@ function readItemForm(formData: FormData) {
     unit: String(formData.get("unit") ?? "").trim() || "式",
     unitPrice: Number(formData.get("unitPrice") ?? 0),
     priceSource,
+    costPrice: costPriceRaw ? Math.round(Number(costPriceRaw)) : null,
+    costCategory: RATE_CATEGORIES.includes(costCategoryRaw as RateCategory)
+      ? (costCategoryRaw as RateCategory)
+      : null,
     remarks: String(formData.get("remarks") ?? "").trim() || null,
   };
 }

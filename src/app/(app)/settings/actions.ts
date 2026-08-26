@@ -38,6 +38,13 @@ export async function updateCompanyAction(
   const roundingModeRaw = String(formData.get("defaultTaxRoundingMode") ?? "ROUND") as RoundingMode;
   const defaultTaxRoundingMode = ROUNDING_MODES.includes(roundingModeRaw) ? roundingModeRaw : "ROUND";
 
+  const targetRatePercentRaw = trimmedOrNull(formData, "targetGrossProfitRatePercent");
+  const targetRatePercent = targetRatePercentRaw ? Number(targetRatePercentRaw) : null;
+  if (targetRatePercentRaw && (!Number.isFinite(targetRatePercent) || targetRatePercent! < 0 || targetRatePercent! > 100)) {
+    return { error: "目標粗利率は0〜100の数値で入力してください。" };
+  }
+  const targetGrossProfitRate = targetRatePercent != null ? targetRatePercent / 100 : null;
+
   await prisma.company.update({
     where: { id: user.companyId },
     data: {
@@ -53,6 +60,7 @@ export async function updateCompanyAction(
       closingDay,
       defaultPaymentTerms: trimmedOrNull(formData, "defaultPaymentTerms"),
       defaultTaxRoundingMode,
+      targetGrossProfitRate,
       licenseNumber: trimmedOrNull(formData, "licenseNumber"),
       invoiceRegistrationNumber: trimmedOrNull(formData, "invoiceRegistrationNumber"),
       bankName: trimmedOrNull(formData, "bankName"),

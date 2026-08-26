@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftDailyReportFromText } from "@/lib/ai";
+import { draftDailyReportFromText, draftQuoteItemsFromText } from "@/lib/ai";
 
 describe("draftDailyReportFromText (モック実装)", () => {
   it("依頼文の音声入力例から各項目を抽出し、聞き取れなかった項目はunclearItemsに積む", async () => {
@@ -38,5 +38,47 @@ describe("draftDailyReportFromText (モック実装)", () => {
     expect(fields).toEqual(
       expect.arrayContaining(["職長", "開始時間", "終了時間", "危険予知", "翌日の予定"])
     );
+  });
+});
+
+describe("draftQuoteItemsFromText (モック実装)", () => {
+  const rateMaster = [
+    {
+      id: "rate-1",
+      name: "L型側溝撤去新設",
+      unit: "m",
+      unitPrice: 8000,
+      costPrice: 5000,
+      category: "SUBCONTRACT",
+    },
+  ];
+
+  it("単価マスタに一致する品目は会社単価を反映する(単価を勝手に作らない)", async () => {
+    const items = await draftQuoteItemsFromText("L型側溝撤去新設33m", rateMaster);
+    expect(items).toHaveLength(1);
+    expect(items[0].quantity).toBe(33);
+    expect(items[0].unit).toBe("m");
+    expect(items[0].unitPriceHint).toBe(8000);
+    expect(items[0].costPriceHint).toBe(5000);
+    expect(items[0].matchedRateItemId).toBe("rate-1");
+  });
+
+  it("単価マスタに一致しない品目は単価不明のまま(unitPriceHint=null)にする", async () => {
+    const items = await draftQuoteItemsFromText("舗装撤去復旧20㎡", rateMaster);
+    expect(items[0].quantity).toBe(20);
+    expect(items[0].unit).toBe("m2");
+    expect(items[0].unitPriceHint).toBeNull();
+    expect(items[0].matchedRateItemId).toBeNull();
+  });
+
+  it("「3人4日」のような労務表記は人日に換算する", async () => {
+    const items = await draftQuoteItemsFromText("土工3人4日", []);
+    expect(items[0].quantity).toBe(12);
+    expect(items[0].unit).toBe("人日");
+  });
+
+  it("改行・読点区切りで複数項目に分ける", async () => {
+    const items = await draftQuoteItemsFromText("掘削工\n残土処分、L型側溝設置", []);
+    expect(items.map((i) => i.itemName)).toEqual(["掘削工", "残土処分", "L型側溝設置"]);
   });
 });

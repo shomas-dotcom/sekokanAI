@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { computeQuoteTotals } from "../totals";
+import { computeQuoteTotals, computeQuoteProfitability, COST_BUCKET_LABEL } from "../totals";
 import { PRICE_SOURCE_LABEL, QUOTE_STATUS_LABEL } from "../priceSourceLabel";
+import { RATE_CATEGORY_LABEL } from "@/lib/rateMaster";
 import {
   updateQuoteMetaAction,
   deleteQuoteAction,
@@ -38,6 +39,12 @@ export default async function QuoteDetailPage({
   if (!quote) notFound();
 
   const totals = computeQuoteTotals(quote.items, quote.taxRatePercent, quote.discountAmount);
+  const profitability = computeQuoteProfitability(quote.items);
+  const targetRate = user.company.targetGrossProfitRate;
+  const belowTarget =
+    targetRate != null &&
+    profitability.grossProfitRate != null &&
+    profitability.grossProfitRate < targetRate;
 
   return (
     <div className="flex flex-col gap-6">
@@ -70,6 +77,8 @@ export default async function QuoteDetailPage({
               <th className="px-2 py-2 font-medium">単位</th>
               <th className="px-2 py-2 font-medium">単価</th>
               <th className="px-2 py-2 font-medium">単価の根拠</th>
+              <th className="px-2 py-2 font-medium">原価</th>
+              <th className="px-2 py-2 font-medium">原価区分</th>
               <th className="px-2 py-2 font-medium">金額</th>
               <th className="px-2 py-2 font-medium">備考</th>
               <th className="px-2 py-2 font-medium" />
@@ -131,6 +140,30 @@ export default async function QuoteDetailPage({
                       className={inputClass}
                     >
                       {Object.entries(PRICE_SOURCE_LABEL).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      form={formId}
+                      name="costPrice"
+                      type="number"
+                      defaultValue={item.costPrice ?? ""}
+                      className={`${inputClass} w-24`}
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <select
+                      form={formId}
+                      name="costCategory"
+                      defaultValue={item.costCategory ?? ""}
+                      className={inputClass}
+                    >
+                      <option value="">未分類</option>
+                      {Object.entries(RATE_CATEGORY_LABEL).map(([value, label]) => (
                         <option key={value} value={value}>
                           {label}
                         </option>
@@ -200,18 +233,64 @@ export default async function QuoteDetailPage({
               ))}
             </select>
           </label>
+          <Field label="原価" name="costPrice" type="number" width="w-24" />
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            原価区分
+            <select name="costCategory" defaultValue="" className={inputClass}>
+              <option value="">未分類</option>
+              {Object.entries(RATE_CATEGORY_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button className={primaryButtonClass}>+ 行を追加</button>
         </form>
       </div>
 
-      {/* 合計 */}
-      <div className="ml-auto w-full max-w-xs rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/50 p-4 text-sm">
-        <Row label="小計" value={totals.subtotal} />
-        <Row label="値引き" value={-totals.discountAmount} />
-        <Row label={`消費税(${quote.taxRatePercent}%)`} value={totals.tax} />
-        <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 text-base font-bold text-slate-900">
-          <span>合計</span>
-          <span>{totals.total.toLocaleString("ja-JP")}円</span>
+      {/* 合計・粗利 */}
+      <div className="ml-auto flex w-full max-w-md flex-col gap-4 sm:flex-row">
+        <div className="w-full rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/50 p-4 text-sm">
+          <Row label="小計" value={totals.subtotal} />
+          <Row label="値引き" value={-totals.discountAmount} />
+          <Row label={`消費税(${quote.taxRatePercent}%)`} value={totals.tax} />
+          <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 text-base font-bold text-slate-900">
+            <span>合計</span>
+            <span>{totals.total.toLocaleString("ja-JP")}円</span>
+          </div>
+        </div>
+
+        <div
+          className={`w-full rounded-2xl border p-4 text-sm ${
+            belowTarget ? "border-rose-300 bg-rose-50" : "border-slate-200 bg-white shadow-sm shadow-slate-200/50"
+          }`}
+        >
+          <p className="mb-1 text-xs font-medium text-slate-500">原価内訳(原価未入力の明細は0円扱い)</p>
+          {Object.entries(COST_BUCKET_LABEL).map(([bucket, label]) => (
+            <Row
+              key={bucket}
+              label={label}
+              value={profitability.costByBucket[bucket as keyof typeof profitability.costByBucket]}
+            />
+          ))}
+          <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 font-bold text-slate-900">
+            <span>粗利益</span>
+            <span>{profitability.grossProfit.toLocaleString("ja-JP")}円</span>
+          </div>
+          <div className="flex justify-between text-slate-600">
+            <span>粗利率</span>
+            <span>
+              {profitability.grossProfitRate != null
+                ? `${(profitability.grossProfitRate * 100).toFixed(1)}%`
+                : "—"}
+            </span>
+          </div>
+          {belowTarget && (
+            <p className="mt-2 font-semibold text-rose-700">
+              ⚠ 粗利率が目標({((targetRate ?? 0) * 100).toFixed(0)}%)を下回っています
+            </p>
+          )}
         </div>
       </div>
 

@@ -41,6 +41,7 @@ model Company {
   closingDay                Int? // 締日(1〜31。月末締めの場合は31を入れる運用とする)
   defaultPaymentTerms       String? // 既定の支払条件(案件個別に上書き可能。例: 月末締め翌月末払い)
   defaultTaxRoundingMode    RoundingMode       @default(ROUND) // 消費税端数処理の既定値
+  targetGrossProfitRate     Float? // 目標粗利率(0〜1の割合。例: 0.2 = 20%)。見積の粗利率がこれを下回ると警告表示する
   licenseNumber             String? // 建設業許可番号
   invoiceRegistrationNumber String? // 適格請求書発行事業者登録番号(インボイス制度)
   bankName                  String?
@@ -70,6 +71,44 @@ model Company {
   numberSequences           NumberSequence[]
   workItemMasters           WorkItemMaster[]
   employees                 Employee[]
+  rateMasterItems           RateMasterItem[]
+}
+
+// 単価マスタの区分。原価集計(材料費/労務費/重機費/外注費/処分費/その他原価)への
+// 割り振りはsrc/lib/rateMaster.tsのcostBucketForCategoryで一元管理する。
+enum RateCategory {
+  LABOR // 作業員人工
+  FOREMAN_LABOR // 世話役人工
+  MACHINERY // 重機
+  DUMP_TRUCK // ダンプ
+  READY_MIX_CONCRETE // 生コン
+  CRUSHED_STONE // 砕石
+  SOIL_DISPOSAL // 残土処分
+  ASPHALT // アスファルト
+  CONCRETE_PRODUCT // コンクリート二次製品
+  BLOCK // ブロック
+  FORMWORK // 型枠
+  SUBCONTRACT // 外注
+  OVERHEAD // 諸経費
+  OTHER
+}
+
+// 会社ごとの単価マスタ。AIは単価を勝手に確定させず、ここに登録された単価を
+// 優先して見積項目候補に反映する(REQUIREMENTS.md/CLAUDE.mdの原価集計ルール)。
+model RateMasterItem {
+  id        String       @id @default(cuid())
+  companyId String
+  company   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category  RateCategory
+  name      String // 具体的な品目名(例: "0.25BHバックホウ(日極)")
+  unit      String // 単位(例: "日", "m3", "m", "式", "人日")
+  unitPrice Int // 売単価
+  costPrice Int? // 原価(粗利計算用。任意)
+  notes     String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([companyId])
 }
 
 enum EmploymentType {
@@ -130,19 +169,19 @@ model ProjectMember {
 }
 
 model User {
-  id                  String     @id @default(cuid())
+  id                  String              @id @default(cuid())
   companyId           String
-  company             Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  email               String     @unique
+  company             Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email               String              @unique
   passwordHash        String
   name                String
-  role                UserRole   @default(MEMBER)
+  role                UserRole            @default(MEMBER)
   emailVerifiedAt     DateTime? // null=メール未認証。未認証でもログイン自体は妨げない(画面上で案内のみ)
-  failedLoginAttempts Int        @default(0) // ブルートフォース対策。ログイン成功で0に戻す
+  failedLoginAttempts Int                 @default(0) // ブルートフォース対策。ログイン成功で0に戻す
   lockedUntil         DateTime? // この日時までログイン試行を拒否する
   deletedAt           DateTime? // 退会(論理削除)。物理削除は別途会社単位の完全削除操作で行う
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
   auditLogs           AuditLog[]
   sessions            Session[]
   verificationTokens  VerificationToken[]
@@ -153,14 +192,14 @@ model User {
 // メール認証・パスワード再設定用の使い捨てトークン。
 // 生トークンはメール本文にのみ記載し、DBにはハッシュ値のみ保存する(Session.tokenHashと同じ考え方)。
 model VerificationToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
   purpose   String // "EMAIL_VERIFY" | "PASSWORD_RESET"
   expiresAt DateTime
   usedAt    DateTime? // 使用済みトークンの再利用を防ぐ
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }
@@ -278,21 +317,22 @@ enum PriceSource {
 }
 
 model QuoteItem {
-  id          String      @id @default(cuid())
-  quoteId     String
-  quote       Quote       @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  sortOrder   Int         @default(0)
-  itemName    String
-  spec        String? // 規格
-  quantity    Float
-  unit        String
-  unitPrice   Int
-  priceSource PriceSource @default(MANUAL)
-  costPrice   Int? // 原価
-  laborUnits  Float? // 人工
-  machinery   String?
-  materials   String?
-  remarks     String?
+  id           String        @id @default(cuid())
+  quoteId      String
+  quote        Quote         @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  sortOrder    Int           @default(0)
+  itemName     String
+  spec         String? // 規格
+  quantity     Float
+  unit         String
+  unitPrice    Int
+  priceSource  PriceSource   @default(MANUAL)
+  costPrice    Int? // 原価
+  costCategory RateCategory? // 原価の区分(材料費/労務費/重機費/外注費/処分費/その他原価の集計に使う)
+  laborUnits   Float? // 人工
+  machinery    String?
+  materials    String?
+  remarks      String?
 
   @@index([quoteId])
 }
@@ -332,8 +372,8 @@ model DailyReport {
   longitude        Float? // GPS取得時点の経度
   capturedAddress  String? // GPSから逆ジオコーディングした取得時点の現場住所(スナップショット)
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   photos       DailyReportPhoto[]
   laborEntries DailyReportLaborEntry[]
@@ -415,11 +455,11 @@ enum PartnerItemKind {
 
 // 原価集計表の「協力会社持込資機材」「その他経費」表
 model DailyReportPartnerItem {
-  id            String      @id @default(cuid())
+  id            String          @id @default(cuid())
   dailyReportId String
-  dailyReport   DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  dailyReport   DailyReport     @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
   kind          PartnerItemKind
-  sortOrder     Int         @default(0)
+  sortOrder     Int             @default(0)
   name          String
   quantity      String?
   unitPrice     Int?

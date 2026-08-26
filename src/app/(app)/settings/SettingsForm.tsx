@@ -23,6 +23,7 @@ type Company = {
   closingDay: number | null;
   defaultPaymentTerms: string | null;
   defaultTaxRoundingMode: string;
+  targetGrossProfitRate: number | null;
   licenseNumber: string | null;
   invoiceRegistrationNumber: string | null;
   bankName: string | null;
@@ -77,6 +78,21 @@ export function SettingsForm({
             name="defaultPaymentTerms"
             defaultValue={company.defaultPaymentTerms ?? ""}
             placeholder="例: 月末締め翌月末払い"
+          />
+        </FieldLabel>
+        <FieldLabel label="目標粗利率(%)">
+          <Input
+            name="targetGrossProfitRatePercent"
+            type="number"
+            min={0}
+            max={100}
+            step="0.1"
+            defaultValue={
+              company.targetGrossProfitRate != null
+                ? Math.round(company.targetGrossProfitRate * 1000) / 10
+                : ""
+            }
+            placeholder="例: 20"
           />
         </FieldLabel>
         <FieldLabel label="消費税の端数処理">

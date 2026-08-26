@@ -9,6 +9,7 @@ const NAV = [
   { href: "/employees", label: "従業員" },
   { href: "/projects", label: "案件" },
   { href: "/quotes", label: "見積" },
+  { href: "/rate-master", label: "単価マスタ" },
   { href: "/contracts", label: "契約" },
   { href: "/invoices", label: "請求" },
   { href: "/daily-reports", label: "日報" },

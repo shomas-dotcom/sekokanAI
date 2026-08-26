@@ -1,40 +1,101 @@
 // AI抽象化レイヤー。AI_API_KEY未設定時はモック実装で動作する(ARCHITECTURE.md参照)。
 // 特定ベンダーへの依存を避けるため、呼び出し側はこのモジュールの関数のみを利用する。
 
+export type RateMasterCandidate = {
+  id: string;
+  name: string;
+  unit: string;
+  unitPrice: number;
+  costPrice: number | null;
+  category: string;
+};
+
 export type DraftQuoteItem = {
   itemName: string;
   spec: string | null;
   quantity: number;
   unit: string;
   unitPriceHint: number | null; // 参考値。確定単価としては使わない(REQUIREMENTS.md)
+  costPriceHint: number | null;
+  categoryHint: string | null;
+  // 会社単価マスタと一致した場合のみ設定する。一致しない場合はnull(単価不明として扱う)
+  matchedRateItemId: string | null;
 };
 
 const isMockMode = () => !process.env.AI_API_KEY;
 
 /**
  * 自由記述の工事内容テキストから見積項目の下書きを作成する。
- * 単価は確定させず、常に priceSource=AI_ESTIMATE(参考値)として扱うこと。
+ * rateMaster(会社単価マスタ)と品目名が一致した場合のみ単価・原価・区分を反映する。
+ * 一致しないものは単価を確定させず、常に priceSource=AI_ESTIMATE(参考値・単価不明)として
+ * 呼び出し側で扱うこと(REQUIREMENTS.md「単価表に無いものは勝手に決めない」)。
  */
-export async function draftQuoteItemsFromText(freeText: string): Promise<DraftQuoteItem[]> {
+export async function draftQuoteItemsFromText(
+  freeText: string,
+  rateMaster: RateMasterCandidate[] = []
+): Promise<DraftQuoteItem[]> {
   if (isMockMode()) {
-    return mockDraftQuoteItems(freeText);
+    return mockDraftQuoteItems(freeText, rateMaster);
   }
   // AI_API_KEY設定後にここへ実際のAI呼び出しを実装する。
-  return mockDraftQuoteItems(freeText);
+  return mockDraftQuoteItems(freeText, rateMaster);
 }
 
-function mockDraftQuoteItems(freeText: string): DraftQuoteItem[] {
+// 工事の数量表記としてよく使われる単位。長いもの(人日等)を先に判定できるよう順序を意識する。
+const QUANTITY_UNIT_PATTERN = /(\d+(?:\.\d+)?)\s*(人日|m2|m3|m²|m³|㎡|㎥|kg|t|台|本|枚|式|日|m)/;
+
+/** 「L型側溝撤去新設33m」のような文から数量と単位を抜き出す。見つからなければ1式とする。 */
+function parseQuantity(line: string): { quantity: number; unit: string } {
+  const match = line.match(QUANTITY_UNIT_PATTERN);
+  if (!match) return { quantity: 1, unit: "式" };
+  const unit = match[2] === "m2" || match[2] === "㎡" ? "m2" : match[2] === "m3" || match[2] === "㎥" ? "m3" : match[2];
+  return { quantity: Number(match[1]), unit };
+}
+
+// 「3人4日」のような労務表記を人日換算する(先に判定し、上のQUANTITY_UNIT_PATTERNより優先する)。
+const LABOR_PATTERN = /(\d+)\s*人\s*(\d+)\s*日/;
+
+function findRateMatch(
+  itemName: string,
+  rateMaster: RateMasterCandidate[]
+): RateMasterCandidate | null {
+  const normalized = itemName.replace(/\s/g, "");
+  // 双方向の部分一致で判定する(マスタの品目名の方が長い/短いどちらのケースもあるため)。
+  return (
+    rateMaster.find((r) => {
+      const rateName = r.name.replace(/\s/g, "");
+      return normalized.includes(rateName) || rateName.includes(normalized);
+    }) ?? null
+  );
+}
+
+function mockDraftQuoteItems(freeText: string, rateMaster: RateMasterCandidate[]): DraftQuoteItem[] {
   return freeText
     .split(/\r?\n|、|,/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .map((line) => ({
-      itemName: line,
-      spec: null,
-      quantity: 1,
-      unit: "式",
-      unitPriceHint: null,
-    }));
+    .map((line) => {
+      const laborMatch = line.match(LABOR_PATTERN);
+      const { quantity, unit } = laborMatch
+        ? { quantity: Number(laborMatch[1]) * Number(laborMatch[2]), unit: "人日" }
+        : parseQuantity(line);
+
+      // 数量表記部分を取り除いた残りを品目名として使う(「L型側溝撤去新設33m」→「L型側溝撤去新設」)
+      const itemName = line.replace(QUANTITY_UNIT_PATTERN, "").replace(LABOR_PATTERN, "").trim() || line;
+
+      const matched = findRateMatch(itemName, rateMaster);
+
+      return {
+        itemName,
+        spec: null,
+        quantity,
+        unit: matched?.unit ?? unit,
+        unitPriceHint: matched?.unitPrice ?? null,
+        costPriceHint: matched?.costPrice ?? null,
+        categoryHint: matched?.category ?? null,
+        matchedRateItemId: matched?.id ?? null,
+      };
+    });
 }
 
 export type DailyReportDraft = {
