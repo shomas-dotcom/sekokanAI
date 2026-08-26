@@ -12,6 +12,8 @@ type Company = {
   fax: string | null;
   email: string | null;
   representativeName: string | null;
+  industry: string | null;
+  employeeCount: number | null;
   licenseNumber: string | null;
   invoiceRegistrationNumber: string | null;
   bankName: string | null;
@@ -39,6 +41,17 @@ export function SettingsForm({
         </FieldLabel>
         <FieldLabel label="代表者名">
           <Input name="representativeName" defaultValue={company.representativeName ?? ""} />
+        </FieldLabel>
+        <FieldLabel label="業種">
+          <Input name="industry" defaultValue={company.industry ?? ""} placeholder="例: 土木、外構、舗装、造成" />
+        </FieldLabel>
+        <FieldLabel label="従業員数">
+          <Input
+            name="employeeCount"
+            type="number"
+            min={0}
+            defaultValue={company.employeeCount ?? ""}
+          />
         </FieldLabel>
         <FieldLabel label="郵便番号">
           <Input name="postalCode" defaultValue={company.postalCode ?? ""} placeholder="123-4567" />

@@ -56,6 +56,8 @@ next-env.d.ts
 # test database (throwaway, created by vitest integration tests)
 /test.db
 /test.db-journal
+/test-tenant.db
+/test-tenant.db-journal
 
 # generated prisma client
 /src/generated/prisma

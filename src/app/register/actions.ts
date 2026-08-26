@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { hash } from "@/lib/password";
 import { createSession } from "@/lib/session";
 import { logAction } from "@/lib/audit";
+import { sendVerificationEmail } from "@/lib/verification";
 
 export type RegisterState = { error?: string } | undefined;
 
@@ -64,6 +65,14 @@ export async function registerAction(
     targetType: "Company",
     targetId: company.id,
   });
+
+  // メール送信に失敗しても登録自体は成立させる(未認証のままログインはでき、
+  // 画面上で再送を案内する。SECURITY.mdの「外部への操作は失敗時も利用者を詰まらせない」方針)。
+  try {
+    await sendVerificationEmail(user.id, user.email);
+  } catch (err) {
+    console.error("[register] failed to send verification email", err);
+  }
 
   await createSession(user.id);
   redirect("/dashboard");

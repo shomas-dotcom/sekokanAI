@@ -36,6 +36,8 @@ model Company {
   fax                       String?
   email                     String?
   representativeName        String?
+  industry                  String? // 業種(例: 土木、外構、舗装、造成)
+  employeeCount             Int? // 従業員数
   licenseNumber             String? // 建設業許可番号
   invoiceRegistrationNumber String? // 適格請求書発行事業者登録番号(インボイス制度)
   bankName                  String?
@@ -45,6 +47,11 @@ model Company {
   bankAccountHolder         String?
   logoUrl                   String?
   plan                      CompanyPlan        @default(FREE)
+  // 運営側(サービス提供者)がこの会社の利用を止めるためのフラグ(Phase9運営管理画面から操作する想定)。
+  // ユーザー自身の退会(User.deletedAt)とは別物 — 未払い・規約違反等、運営都合の停止に使う。
+  isSuspended               Boolean            @default(false)
+  suspendedAt               DateTime?
+  suspendedReason           String?
   createdAt                 DateTime           @default(now())
   updatedAt                 DateTime           @updatedAt
   users                     User[]
@@ -62,19 +69,39 @@ model Company {
 }
 
 model User {
-  id           String     @id @default(cuid())
-  companyId    String
-  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  email        String     @unique
-  passwordHash String
-  name         String
-  role         UserRole   @default(MEMBER)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  auditLogs    AuditLog[]
-  sessions     Session[]
+  id                  String     @id @default(cuid())
+  companyId           String
+  company             Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email               String     @unique
+  passwordHash        String
+  name                String
+  role                UserRole   @default(MEMBER)
+  emailVerifiedAt     DateTime? // null=メール未認証。未認証でもログイン自体は妨げない(画面上で案内のみ)
+  failedLoginAttempts Int        @default(0) // ブルートフォース対策。ログイン成功で0に戻す
+  lockedUntil         DateTime? // この日時までログイン試行を拒否する
+  deletedAt           DateTime? // 退会(論理削除)。物理削除は別途会社単位の完全削除操作で行う
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  auditLogs           AuditLog[]
+  sessions            Session[]
+  verificationTokens  VerificationToken[]
 
   @@index([companyId])
+}
+
+// メール認証・パスワード再設定用の使い捨てトークン。
+// 生トークンはメール本文にのみ記載し、DBにはハッシュ値のみ保存する(Session.tokenHashと同じ考え方)。
+model VerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  purpose   String // "EMAIL_VERIFY" | "PASSWORD_RESET"
+  expiresAt DateTime
+  usedAt    DateTime? // 使用済みトークンの再利用を防ぐ
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // ログインセッション。Cookieにはtokenの生値のみを保持し、DBにはハッシュ値のみ保存する

@@ -1,12 +1,23 @@
 "use client";
 
-import { useActionState } from "react";
+import { Suspense, useActionState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { loginAction } from "./actions";
 import { Input, Button, Card } from "@/components/ui";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const [state, formAction, pending] = useActionState(loginAction, undefined);
+  const searchParams = useSearchParams();
+  const resetDone = searchParams.get("resetDone") === "1";
 
   return (
     <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-amber-600 via-orange-600 to-slate-900 px-4 py-12">
@@ -20,6 +31,11 @@ export default function LoginPage() {
         </div>
 
         <Card>
+          {resetDone && (
+            <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              パスワードを更新しました。新しいパスワードでログインしてください。
+            </p>
+          )}
           <form action={formAction} className="flex flex-col gap-4">
             <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
               メールアドレス
@@ -39,7 +55,12 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-slate-500">
+          <p className="mt-4 text-center text-sm">
+            <Link href="/forgot-password" className="font-medium text-orange-700 underline">
+              パスワードをお忘れですか?
+            </Link>
+          </p>
+          <p className="mt-2 text-center text-sm text-slate-500">
             アカウントをお持ちでない方は{" "}
             <Link href="/register" className="font-medium text-orange-700 underline">
               会社登録

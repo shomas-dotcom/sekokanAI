@@ -20,6 +20,12 @@ export async function updateCompanyAction(
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "会社名は必須です。" };
 
+  const employeeCountRaw = trimmedOrNull(formData, "employeeCount");
+  const employeeCount = employeeCountRaw ? Number(employeeCountRaw) : null;
+  if (employeeCountRaw && (!Number.isFinite(employeeCount) || employeeCount! < 0)) {
+    return { error: "従業員数は0以上の数値で入力してください。" };
+  }
+
   await prisma.company.update({
     where: { id: user.companyId },
     data: {
@@ -30,6 +36,8 @@ export async function updateCompanyAction(
       fax: trimmedOrNull(formData, "fax"),
       email: trimmedOrNull(formData, "email"),
       representativeName: trimmedOrNull(formData, "representativeName"),
+      industry: trimmedOrNull(formData, "industry"),
+      employeeCount,
       licenseNumber: trimmedOrNull(formData, "licenseNumber"),
       invoiceRegistrationNumber: trimmedOrNull(formData, "invoiceRegistrationNumber"),
       bankName: trimmedOrNull(formData, "bankName"),
