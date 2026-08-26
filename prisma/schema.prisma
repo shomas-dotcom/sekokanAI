@@ -209,11 +209,47 @@ model User {
   deletedAt           DateTime? // 退会(論理削除)。物理削除は別途会社単位の完全削除操作で行う
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
+  lastLoginAt         DateTime? // 運営管理画面の「最終ログイン」表示に使う
   auditLogs           AuditLog[]
   sessions            Session[]
   verificationTokens  VerificationToken[]
 
   @@index([companyId])
+}
+
+// サービス運営者(杉本本人等)専用のアカウント。会社(Company)には一切紐付かない
+// 独立したテーブルにすることで、テナントのUserと混同してA社/B社のデータが
+// 見えてしまう事故を構造的に防ぐ(companyIdによる絞り込みが効かない存在を
+// テナント側のモデルとは別テーブルにする)。
+model PlatformAdmin {
+  id           String                 @id @default(cuid())
+  email        String                 @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  sessions     PlatformAdminSession[]
+}
+
+model PlatformAdminSession {
+  id        String        @id @default(cuid())
+  tokenHash String        @unique
+  adminId   String
+  admin     PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime      @default(now())
+
+  @@index([adminId])
+}
+
+// 運営者が会社の利用停止/再開等、テナントに影響する操作を行った記録。
+// 通常のAuditLog(会社ごとの操作ログ)とは別に、運営者側の操作として独立管理する。
+model PlatformAdminAuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String // 例: "company.suspend", "company.resume", "company.view"
+  companyId String? // 対象会社(閲覧・操作対象)
+  createdAt DateTime @default(now())
 }
 
 // メール認証・パスワード再設定用の使い捨てトークン。

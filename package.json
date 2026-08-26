@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed-admin": "tsx prisma/seedPlatformAdmin.ts",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "test": "vitest run",
