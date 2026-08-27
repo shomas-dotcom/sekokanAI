@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { draftDailyReportFromText, draftQuoteItemsFromText, draftKyItems } from "@/lib/ai";
+
+function mockAnthropicResponse(text: string, ok = true) {
+  return {
+    ok,
+    status: ok ? 200 : 500,
+    text: async () => (ok ? "" : "internal error"),
+    json: async () => ({ content: [{ text }] }),
+  } as Response;
+}
 
 describe("draftDailyReportFromText (モック実装)", () => {
   it("依頼文の音声入力例から各項目を抽出し、聞き取れなかった項目はunclearItemsに積む", async () => {
@@ -122,5 +131,93 @@ describe("AI関数の異常系入力(空文字・記号のみ等でも例外を�
   it("draftKyItemsは空文字でも例外を投げず空の1行を返す", async () => {
     const items = await draftKyItems("");
     expect(items).toEqual([{ risk: "", countermeasure: "" }]);
+  });
+});
+
+describe("AI_API_KEY設定時(本物のAI呼び出しモード、fetchはモック化する)", () => {
+  const originalKey = process.env.AI_API_KEY;
+
+  afterEach(() => {
+    process.env.AI_API_KEY = originalKey;
+    vi.unstubAllGlobals();
+  });
+
+  it("draftQuoteItemsFromTextはAIの抽出結果に単価マスタを機械的に突き合わせる(AIは単価を決めない)", async () => {
+    process.env.AI_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockAnthropicResponse(
+        JSON.stringify([{ itemName: "L型側溝撤去新設", spec: null, quantity: 33, unit: "m" }])
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rateMaster = [
+      { id: "r1", name: "L型側溝撤去新設", unit: "m", unitPrice: 8000, costPrice: 5000, category: "SUBCONTRACT" },
+    ];
+    const items = await draftQuoteItemsFromText("側溝をやる", rateMaster);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(items).toEqual([
+      {
+        itemName: "L型側溝撤去新設",
+        spec: null,
+        quantity: 33,
+        unit: "m",
+        unitPriceHint: 8000,
+        costPriceHint: 5000,
+        categoryHint: "SUBCONTRACT",
+        matchedRateItemId: "r1",
+      },
+    ]);
+  });
+
+  it("AI呼び出しが失敗してもエラーを投げず、ルールベースの下書きに自動で切り替わる", async () => {
+    process.env.AI_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockAnthropicResponse("", false)));
+
+    const items = await draftQuoteItemsFromText("掘削工10m3", []);
+    expect(items).toHaveLength(1);
+    expect(items[0].itemName).toContain("掘削工");
+  });
+
+  it("AIの応答がJSONとして壊れていてもエラーを投げず、ルールベースの下書きに切り替わる", async () => {
+    process.env.AI_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockAnthropicResponse("これはJSONではありません")));
+
+    const draft = await draftDailyReportFromText("現場は坂戸市役所。作業員4名。");
+    expect(draft.siteName).toBe("坂戸市役所");
+  });
+
+  it("draftDailyReportFromTextはAIが明記していない項目をnullのまま確認候補にする(勝手に埋めない)", async () => {
+    process.env.AI_API_KEY = "test-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        mockAnthropicResponse(
+          JSON.stringify({
+            siteName: "坂戸市役所",
+            weather: "晴れ",
+            workerCount: 4,
+            machinery: null,
+            vehicles: null,
+            quantityWorked: null,
+            safetyNotes: null,
+            foremanName: null,
+            startTime: null,
+            endTime: null,
+            dangerPrediction: null,
+            nextDayPlan: null,
+          })
+        )
+      )
+    );
+
+    const draft = await draftDailyReportFromText("現場は坂戸市役所。晴れ。作業員4名。");
+    expect(draft.siteName).toBe("坂戸市役所");
+    expect(draft.weather).toBe("晴れ");
+    expect(draft.workerCount).toBe(4);
+    expect(draft.safetyNotes).toBeNull();
+    expect(draft.unclearItems.map((i) => i.field)).toContain("安全事項");
+    expect(draft.unclearItems.map((i) => i.field)).toContain("職長");
   });
 });

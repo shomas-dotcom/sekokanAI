@@ -24,6 +24,51 @@ export type DraftQuoteItem = {
 
 const isMockMode = () => !process.env.AI_API_KEY;
 
+// 実際のAI呼び出しはAnthropicのMessages APIを直接fetchする(SDKを追加せず依存を増やさない)。
+// 軽量・低コストなモデルを使う(構造化データの抽出のみが目的で、高度な推論は不要なため)。
+const ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
+
+async function callAnthropic(system: string, userMessage: string): Promise<string> {
+  const apiKey = process.env.AI_API_KEY;
+  if (!apiKey) throw new Error("AI_API_KEY is not set");
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 1024,
+      temperature: 0.2,
+      system,
+      messages: [{ role: "user", content: userMessage }],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Anthropic API error: ${response.status} ${body.slice(0, 200)}`);
+  }
+
+  const data = (await response.json()) as { content?: { text?: string }[] };
+  const text = data.content?.[0]?.text;
+  if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
+  return text;
+}
+
+/** Claudeが```json``` で囲んで返すことがあるため取り除いてからJSONとして解釈する。 */
+function extractJson<T>(raw: string): T | null {
+  const cleaned = raw.replace(/```json\s*|```\s*$/g, "").trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 自由記述の工事内容テキストから見積項目の下書きを作成する。
  * rateMaster(会社単価マスタ)と品目名が一致した場合のみ単価・原価・区分を反映する。
@@ -37,8 +82,53 @@ export async function draftQuoteItemsFromText(
   if (isMockMode()) {
     return mockDraftQuoteItems(freeText, rateMaster);
   }
-  // AI_API_KEY設定後にここへ実際のAI呼び出しを実装する。
-  return mockDraftQuoteItems(freeText, rateMaster);
+  try {
+    return await aiDraftQuoteItems(freeText, rateMaster);
+  } catch (err) {
+    // AI呼び出しが失敗しても見積作成自体は止めない(ルールベースの下書きにフォールバックする)
+    console.error("[ai] draftQuoteItemsFromText: falling back to mock", err);
+    return mockDraftQuoteItems(freeText, rateMaster);
+  }
+}
+
+/**
+ * AIには「文章から品目名・数量・単位を読み取る」ことだけをさせ、単価・原価・区分は
+ * 一切AIに決めさせない。読み取った品目名を、これまでどおり findRateMatch で会社の
+ * 単価マスタと機械的に突き合わせてから返す(AIが単価を勝手に確定しないというルールは
+ * モック実装と全く同じ形で維持する)。
+ */
+async function aiDraftQuoteItems(
+  freeText: string,
+  rateMaster: RateMasterCandidate[]
+): Promise<DraftQuoteItem[]> {
+  const system = `あなたは建設工事の見積書作成を補助するアシスタントです。
+与えられた工事内容の自由記述テキストから、見積の明細候補を抽出してください。
+必ずJSON配列のみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+各要素は次の形式にしてください: {"itemName": string, "spec": string または null, "quantity": number, "unit": string}
+単価・金額・原価は絶対に含めないでください(それらは別の仕組みで会社の単価表と突き合わせます)。
+数量・単位が文中に明記されていない場合は quantity を 1、unit を "式" としてください。`;
+
+  const raw = await callAnthropic(system, freeText);
+  const parsed = extractJson<{ itemName: string; spec: string | null; quantity: number; unit: string }[]>(
+    raw
+  );
+  if (!parsed || !Array.isArray(parsed)) {
+    throw new Error("AI response was not a valid JSON array");
+  }
+
+  return parsed.map((item) => {
+    const matched = findRateMatch(item.itemName, rateMaster);
+    return {
+      itemName: item.itemName,
+      spec: item.spec ?? null,
+      quantity: typeof item.quantity === "number" && Number.isFinite(item.quantity) ? item.quantity : 1,
+      unit: matched?.unit ?? item.unit ?? "式",
+      unitPriceHint: matched?.unitPrice ?? null,
+      costPriceHint: matched?.costPrice ?? null,
+      categoryHint: matched?.category ?? null,
+      matchedRateItemId: matched?.id ?? null,
+    };
+  });
 }
 
 // 工事の数量表記としてよく使われる単位。長いもの(人日等)を先に判定できるよう順序を意識する。
@@ -136,8 +226,71 @@ export async function draftDailyReportFromText(rawText: string): Promise<DailyRe
   if (isMockMode()) {
     return mockDraftDailyReport(rawText);
   }
-  // AI_API_KEY設定後にここへ実際のAI呼び出しを実装する。
-  return mockDraftDailyReport(rawText);
+  try {
+    return await aiDraftDailyReport(rawText);
+  } catch (err) {
+    // AI呼び出しが失敗しても日報作成自体は止めない(ルールベースの下書きにフォールバックする)
+    console.error("[ai] draftDailyReportFromText: falling back to mock", err);
+    return mockDraftDailyReport(rawText);
+  }
+}
+
+const DAILY_REPORT_FIELD_LABEL: Record<string, string> = {
+  siteName: "現場名",
+  weather: "天候",
+  workerCount: "作業員数",
+  safetyNotes: "安全事項",
+  foremanName: "職長",
+  startTime: "開始時間",
+  endTime: "終了時間",
+  dangerPrediction: "危険予知",
+  nextDayPlan: "翌日の予定",
+};
+
+/**
+ * AIに項目抽出をさせるが、「明記されていない項目を推測で埋めない」ことを厳しく指示する。
+ * nullで返ってきた項目は、モック実装と同じくunclearItems(確認候補)として積む。
+ */
+async function aiDraftDailyReport(rawText: string): Promise<DailyReportDraft> {
+  const system = `あなたは建設現場の作業日報作成を補助するアシスタントです。
+与えられた音声認識結果(またはテキスト)から、日報の項目を抽出してください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"siteName": string|null, "weather": string|null, "workerCount": number|null, "machinery": string|null, "vehicles": string|null, "quantityWorked": string|null, "safetyNotes": string|null, "foremanName": string|null, "startTime": string|null, "endTime": string|null, "dangerPrediction": string|null, "nextDayPlan": string|null}
+startTime/endTimeは"HH:mm"形式にしてください。
+最も重要な注意: 文中に明確に述べられていない項目は、絶対に推測で埋めずnullにしてください。
+「異常なし」「良好」等、確認できていない安全確認の結果を勝手に作らないでください。`;
+
+  const raw = await callAnthropic(system, rawText);
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+
+  const asStringOrNull = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
+  const asNumberOrNull = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+  const draft: DailyReportDraft = {
+    siteName: asStringOrNull(parsed.siteName),
+    weather: asStringOrNull(parsed.weather),
+    workerCount: asNumberOrNull(parsed.workerCount),
+    machinery: asStringOrNull(parsed.machinery),
+    workContent: rawText.trim() || null,
+    quantityWorked: asStringOrNull(parsed.quantityWorked),
+    safetyNotes: asStringOrNull(parsed.safetyNotes),
+    foremanName: asStringOrNull(parsed.foremanName),
+    vehicles: asStringOrNull(parsed.vehicles),
+    startTime: asStringOrNull(parsed.startTime),
+    endTime: asStringOrNull(parsed.endTime),
+    dangerPrediction: asStringOrNull(parsed.dangerPrediction),
+    nextDayPlan: asStringOrNull(parsed.nextDayPlan),
+    unclearItems: [],
+  };
+
+  for (const [key, label] of Object.entries(DAILY_REPORT_FIELD_LABEL)) {
+    if ((draft as unknown as Record<string, unknown>)[key] === null) {
+      draft.unclearItems.push({ field: label, note: "音声からは特定できませんでした" });
+    }
+  }
+
+  return draft;
 }
 
 function mockDraftDailyReport(rawText: string): DailyReportDraft {
