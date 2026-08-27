@@ -30,8 +30,8 @@
 ## 技術構成
 
 - Next.js 16(App Router, TypeScript, Tailwind CSS v4)
-- Prisma 7 + SQLite(開発、libsqlドライバアダプタ経由)→ 本番はクラウドDBへ切替可能
-- 認証: 未実装(Day2でAuth.js導入予定)
+- Prisma 7 + Postgres(`@prisma/adapter-pg`経由。開発・本番ともNeon等のクラウドPostgresを利用。2026-08-27にSQLiteから移行、旧マイグレーションは`prisma/migrations_sqlite_archive`に記録として保持)
+- 認証: 自前実装(scryptパスワードハッシュ・Cookieセッション、Auth.js等の外部ライブラリは未使用)
 - AI: 抽象化レイヤー経由、`AI_API_KEY` 未設定時はモック応答([ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md))
 
 選定理由は [ARCHITECTURE.md](./ARCHITECTURE.md) を参照。このNext.jsのバージョンは学習データと挙動が異なるため、コード変更前に `node_modules/next/dist/docs/` を確認すること([AGENTS.md](./AGENTS.md))。
@@ -41,6 +41,8 @@
 ```bash
 npm install
 cp .env.example .env
+# .env の DATABASE_URL に、Neon等で取得したPostgres接続文字列を設定する
+# (2026-08-27以降、SQLiteでは動作しない。無料枠のある https://neon.tech を推奨)
 npm run db:migrate
 npm run db:seed
 npm run dev

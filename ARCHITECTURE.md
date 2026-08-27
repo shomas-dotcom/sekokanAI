@@ -6,11 +6,11 @@
 | --- | --- | --- |
 | フロントエンド/バックエンド | Next.js 16 (App Router, TypeScript) | フルスタックを1リポジトリで完結でき、Server Actionsでフォーム処理を簡潔に書ける |
 | UI | Tailwind CSS v4 | create-next-appの標準構成、スマホ対応のユーティリティが豊富 |
-| DB | SQLite(開発, libsqlドライバアダプタ経由) → Postgres等(本番、未確定) | 非管理者Windows環境でローカルPostgresサーバーを導入できないため開発はSQLiteに変更。本番はユーザーがクラウドDBアカウントを用意した時点で切替 |
-| ORM | Prisma 7 | 型安全なスキーマ管理。v7からdriver adapter必須のため `@prisma/adapter-libsql` を使用(better-sqlite3等ネイティブビルド系は非管理者環境で失敗するリスクがあるため避けた) |
-| 認証 | 未実装(Day2でAuth.js導入予定) | — |
-| AI | 抽象化レイヤー([ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md)) | 特定ベンダーへの依存を避け、`AI_API_KEY`未設定時はモック応答で開発継続可能にする |
-| デプロイ | 未確定(Vercel想定) | クラウドアカウント未取得のため、Day6-7でアカウント発行後に確定 |
+| DB | Postgres(Neon等のクラウドDB、`@prisma/adapter-pg`経由) | 2026-08-27追記: 事業者がNeonの無料アカウントを取得したため、開発当初のSQLite(非管理者Windows環境でローカルPostgresを導入できなかったための暫定措置)から移行した。旧SQLiteのマイグレーション履歴は`prisma/migrations_sqlite_archive`に記録として保持 |
+| ORM | Prisma 7 | 型安全なスキーマ管理。v7からdriver adapter必須のため `@prisma/adapter-pg` を使用 |
+| 認証 | 自前実装(scryptパスワードハッシュ・Cookieセッション) | 2026-08-26追記: Auth.js等は導入せず、Node標準のscryptとハッシュ化済みセッショントークンによる自前実装とした(依存を減らし、動作を完全に把握できる範囲に留めるため) |
+| AI | 抽象化レイヤー([ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md)) | 特定ベンダーへの依存を避け、`AI_API_KEY`未設定時はモック応答で開発継続可能にする。2026-08-26時点でも実AI APIへの接続は未実施(ルールベースのモックのみ) |
+| デプロイ | Render(想定、[DEPLOYMENT.md](./DEPLOYMENT.md)) | 2026-08-26追記: Vercelから方針変更。`render.yaml`を用意済みだが、実デプロイは事業者のRenderアカウント取得後に実施予定 |
 
 Next.js 16はApp Router/キャッシュ周りに破壊的変更があるため、コード変更前に `node_modules/next/dist/docs/` を確認する運用とする([AGENTS.md](./AGENTS.md)、`next dev` が自動再生成)。Cache Components(`cacheComponents: true`)は本プロジェクトでは有効化しない — ログイン後のダッシュボード中心のCRUDアプリであり、静的シェル最適化よりも実装のシンプルさを優先する。
 

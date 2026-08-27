@@ -1,8 +1,9 @@
 // Prisma schema file
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 //
-// Dev DB: SQLite (file:./dev.db). Production should point DATABASE_URL at a
-// hosted Postgres (Neon/Supabase等) — see ENVIRONMENT_VARIABLES.md.
+// DB: Postgres(Neon)。2026-08-27にSQLiteから移行した。旧SQLite用の
+// マイグレーション履歴は prisma/migrations_sqlite_archive に記録として残している
+// (Postgresへは適用できないSQL方言のため、そのまま使い回すことはできない)。
 // Every business table carries companyId for tenant isolation; all queries
 // must filter by the authenticated user's companyId (see ARCHITECTURE.md).
 
@@ -12,7 +13,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 enum UserRole {

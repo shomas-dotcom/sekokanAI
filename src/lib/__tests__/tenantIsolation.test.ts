@@ -1,52 +1,23 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execSync } from "node:child_process";
-import { existsSync, unlinkSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import { prisma } from "@/lib/prisma";
 
 // 「A社のユーザーがB社のデータを取得・更新・削除できないこと」を確認する結合テスト
 // (RISK_REGISTER.md「会社間データ漏洩」対応)。
 // 各Server Action(例: src/app/(app)/daily-reports/[id]/photos/actions.ts)は毎回
 // `where: { id, companyId: user.companyId }` の形でクエリしており、本テストはその
 // パターンが実際にB社のIDを弾くことを、業務データを持つ主要モデルすべてで検証する。
-// Server Action自体(next/headers経由のCookieセッション)を直接呼ぶとテスト基盤が
-// 複雑になりすぎるため、実際に各actionsファイルが使っているクエリ条件をそのまま
-// 再現する形で検証する。
-const projectRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const testDbPath = path.join(projectRoot, "test-tenant.db");
-const testDatabaseUrl = "file:./test-tenant.db";
-
-let prismaModule: typeof import("@/lib/prisma");
-
-beforeAll(async () => {
-  try {
-    if (existsSync(testDbPath)) unlinkSync(testDbPath);
-  } catch {
-    /* 前回実行分が残っていても後続のcreateで上書きされるため問題ない */
-  }
-  execSync("npx prisma migrate deploy", {
-    cwd: projectRoot,
-    env: { ...process.env, DATABASE_URL: testDatabaseUrl },
-    stdio: "pipe",
-  });
-
-  process.env.DATABASE_URL = testDatabaseUrl;
-  prismaModule = await import("@/lib/prisma");
-}, 60_000);
+// Postgres移行後は開発用DB(.envのDATABASE_URL)に直接接続し、このテストが作った
+// 会社だけを終了後に削除する(専用の使い捨てDBは用意しない)。
+const TEST_COMPANY_PREFIX = "テナント分離テスト";
 
 afterAll(async () => {
-  await prismaModule.prisma.$disconnect();
-  try {
-    if (existsSync(testDbPath)) unlinkSync(testDbPath);
-  } catch {
-    /* Windowsではハンドル解放に時間差があるため、後始末の失敗は無視する */
-  }
+  await prisma.company.deleteMany({ where: { name: { startsWith: TEST_COMPANY_PREFIX } } });
 });
 
 async function setupTwoCompanies() {
-  const prisma = prismaModule.prisma;
-  const companyA = await prisma.company.create({ data: { name: "テナント分離テストA社" } });
-  const companyB = await prisma.company.create({ data: { name: "テナント分離テストB社" } });
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const companyA = await prisma.company.create({ data: { name: `${TEST_COMPANY_PREFIX}A社-${suffix}` } });
+  const companyB = await prisma.company.create({ data: { name: `${TEST_COMPANY_PREFIX}B社-${suffix}` } });
 
   const customerB = await prisma.customer.create({ data: { companyId: companyB.id, name: "B社の顧客" } });
   const projectB = await prisma.project.create({
@@ -62,7 +33,7 @@ async function setupTwoCompanies() {
     data: {
       companyId: companyB.id,
       projectId: projectB.id,
-      invoiceNumber: `TEST-${Date.now()}`,
+      invoiceNumber: `TEST-${Date.now()}-${suffix}`,
       issueDate: new Date(),
     },
   });
@@ -73,7 +44,7 @@ async function setupTwoCompanies() {
 describe("テナント分離: A社からB社のデータへアクセスできない", () => {
   it("現場(Project)をB社のIDと自社のcompanyIdで検索すると見つからない", async () => {
     const { companyA, projectB } = await setupTwoCompanies();
-    const result = await prismaModule.prisma.project.findFirst({
+    const result = await prisma.project.findFirst({
       where: { id: projectB.id, companyId: companyA.id },
     });
     expect(result).toBeNull();
@@ -81,7 +52,7 @@ describe("テナント分離: A社からB社のデータへアクセスできな
 
   it("見積(Quote)をB社のIDと自社のcompanyIdで検索すると見つからない", async () => {
     const { companyA, quoteB } = await setupTwoCompanies();
-    const result = await prismaModule.prisma.quote.findFirst({
+    const result = await prisma.quote.findFirst({
       where: { id: quoteB.id, companyId: companyA.id },
     });
     expect(result).toBeNull();
@@ -89,7 +60,7 @@ describe("テナント分離: A社からB社のデータへアクセスできな
 
   it("日報(DailyReport)をB社のIDと自社のcompanyIdで検索すると見つからない", async () => {
     const { companyA, dailyReportB } = await setupTwoCompanies();
-    const result = await prismaModule.prisma.dailyReport.findFirst({
+    const result = await prisma.dailyReport.findFirst({
       where: { id: dailyReportB.id, companyId: companyA.id },
     });
     expect(result).toBeNull();
@@ -97,7 +68,7 @@ describe("テナント分離: A社からB社のデータへアクセスできな
 
   it("請求書(Invoice)をB社のIDと自社のcompanyIdで検索すると見つからない", async () => {
     const { companyA, invoiceB } = await setupTwoCompanies();
-    const result = await prismaModule.prisma.invoice.findFirst({
+    const result = await prisma.invoice.findFirst({
       where: { id: invoiceB.id, companyId: companyA.id },
     });
     expect(result).toBeNull();
@@ -105,30 +76,30 @@ describe("テナント分離: A社からB社のデータへアクセスできな
 
   it("B社のIDをA社のcompanyId条件付きで更新しようとしても0件しか更新されない(updateMany)", async () => {
     const { companyA, dailyReportB } = await setupTwoCompanies();
-    const result = await prismaModule.prisma.dailyReport.updateMany({
+    const result = await prisma.dailyReport.updateMany({
       where: { id: dailyReportB.id, companyId: companyA.id },
       data: { weather: "改ざん" },
     });
     expect(result.count).toBe(0);
 
-    const untouched = await prismaModule.prisma.dailyReport.findUnique({ where: { id: dailyReportB.id } });
+    const untouched = await prisma.dailyReport.findUnique({ where: { id: dailyReportB.id } });
     expect(untouched?.weather).toBeNull();
   });
 
   it("B社のIDをA社のcompanyId条件付きで削除しようとしても0件しか削除されない(deleteMany)", async () => {
     const { companyA, dailyReportB } = await setupTwoCompanies();
-    const result = await prismaModule.prisma.dailyReport.deleteMany({
+    const result = await prisma.dailyReport.deleteMany({
       where: { id: dailyReportB.id, companyId: companyA.id },
     });
     expect(result.count).toBe(0);
 
-    const stillExists = await prismaModule.prisma.dailyReport.findUnique({ where: { id: dailyReportB.id } });
+    const stillExists = await prisma.dailyReport.findUnique({ where: { id: dailyReportB.id } });
     expect(stillExists).not.toBeNull();
   });
 
   it("正しいcompanyId(B社自身)であれば取得できる(検索条件自体が壊れていないことの確認)", async () => {
     const { companyB, projectB } = await setupTwoCompanies();
-    const result = await prismaModule.prisma.project.findFirst({
+    const result = await prisma.project.findFirst({
       where: { id: projectB.id, companyId: companyB.id },
     });
     expect(result?.id).toBe(projectB.id);
