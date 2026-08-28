@@ -47,6 +47,13 @@ export function VoiceInputButton({
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const baseTextRef = useRef("");
+  // ブラウザ(特にChrome/iOS Safari)は無音が続くと数十秒〜1分程度で自動的に
+  // 音声認識を終了させてしまう。停止ボタンを押すまで話し続けられるように、
+  // 「利用者が意図的に止めたか」をこのrefで管理し、意図しない終了(=このrefがtrueのまま
+  // onendが呼ばれた)場合は自動で再開する。
+  const wantsListeningRef = useRef(false);
+  // 権限拒否・マイク無し等、再開しても無駄なエラーの場合は自動再開しない
+  const fatalErrorRef = useRef(false);
 
   useEffect(() => {
     setSupported(getSpeechRecognitionCtor() !== null);
@@ -71,17 +78,12 @@ export function VoiceInputButton({
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  function toggle() {
+  function startRecognition() {
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) {
       setSupported(false);
       return;
     }
-    if (listening) {
-      recognitionRef.current?.stop();
-      return;
-    }
-    baseTextRef.current = targetRef?.current?.value ?? "";
     const recognition = new Ctor();
     recognition.lang = "ja-JP";
     recognition.continuous = continuous;
@@ -104,11 +106,40 @@ export function VoiceInputButton({
         if (text) applyTranscript(text, true);
       }
     };
-    recognition.onerror = () => setListening(false);
-    recognition.onend = () => setListening(false);
+    recognition.onerror = (event) => {
+      // "no-speech"(無音が続いただけ)は再開すればよいので致命的エラー扱いにしない
+      const errorType = (event as { error?: string })?.error;
+      fatalErrorRef.current = errorType === "not-allowed" || errorType === "audio-capture";
+    };
+    recognition.onend = () => {
+      if (continuous && wantsListeningRef.current && !fatalErrorRef.current) {
+        // 利用者はまだ話し続けるつもりなのに、ブラウザ側の都合で切れただけ。
+        // 気付かれないよう即座に新しい認識セッションを開始する(蓄積済みのテキストは維持)。
+        startRecognition();
+        return;
+      }
+      setListening(false);
+    };
     recognitionRef.current = recognition;
     setListening(true);
     recognition.start();
+  }
+
+  function toggle() {
+    if (listening) {
+      // 利用者が明示的に停止ボタンを押した場合のみ、本当に終了させる
+      wantsListeningRef.current = false;
+      recognitionRef.current?.stop();
+      return;
+    }
+    if (!getSpeechRecognitionCtor()) {
+      setSupported(false);
+      return;
+    }
+    baseTextRef.current = targetRef?.current?.value ?? "";
+    wantsListeningRef.current = true;
+    fatalErrorRef.current = false;
+    startRecognition();
   }
 
   if (!supported) {

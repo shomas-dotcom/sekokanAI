@@ -19,7 +19,8 @@ describe("draftDailyReportFromText (モック実装)", () => {
 
     expect(draft.machinery).toContain("バックホウ");
     expect(draft.machinery).toContain("プレート");
-    expect(draft.quantityWorked).toContain("25㎡");
+    // ㎡は正規化(normalizeExtractedText)により建設現場でよく使う表記"m2"に揃える
+    expect(draft.quantityWorked).toContain("25m2");
     expect(draft.startTime).toBe("08:00");
     expect(draft.endTime).toBe("17:00");
     expect(draft.dangerPrediction).toContain("重機接触");

@@ -1,6 +1,8 @@
 // AI抽象化レイヤー。AI_API_KEY未設定時はモック実装で動作する(ARCHITECTURE.md参照)。
 // 特定ベンダーへの依存を避けるため、呼び出し側はこのモジュールの関数のみを利用する。
 
+import { normalizeExtractedText } from "@/lib/textNormalize";
+
 export type RateMasterCandidate = {
   id: string;
   name: string;
@@ -76,9 +78,10 @@ function extractJson<T>(raw: string): T | null {
  * 呼び出し側で扱うこと(REQUIREMENTS.md「単価表に無いものは勝手に決めない」)。
  */
 export async function draftQuoteItemsFromText(
-  freeText: string,
+  freeTextRaw: string,
   rateMaster: RateMasterCandidate[] = []
 ): Promise<DraftQuoteItem[]> {
+  const freeText = normalizeExtractedText(freeTextRaw);
   if (isMockMode()) {
     return mockDraftQuoteItems(freeText, rateMaster);
   }
@@ -222,7 +225,8 @@ function toHHMM(hourText: string): string {
  * 認識・抽出できなかった項目は勝手に補完せず unclearItems に確認候補として積む
  * (REQUIREMENTS.md 音声入力機能の必須仕様)。
  */
-export async function draftDailyReportFromText(rawText: string): Promise<DailyReportDraft> {
+export async function draftDailyReportFromText(rawTextInput: string): Promise<DailyReportDraft> {
+  const rawText = normalizeExtractedText(rawTextInput);
   if (isMockMode()) {
     return mockDraftDailyReport(rawText);
   }
@@ -313,7 +317,10 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
   const foundVehicles = VEHICLE_WORDS.filter((v) => rawText.includes(v));
   const vehicles = foundVehicles.length > 0 ? foundVehicles.join("、") : null;
 
-  const quantityMatches = [...rawText.matchAll(/(\d+(?:\.\d+)?)\s*(立米|m3|m²|㎡|m)/g)];
+  // normalizeExtractedText(NFKC)により ㎡→"m2"、㎥→"m3"、m²→"m2" に揃っているが、
+  // 念のため元の表記(㎡・㎥・m²等)にも対応しておく。"m2"/"m3"を先に判定しないと
+  // 単独の"m"に先にマッチしてしまい末尾の数字を読み落とす(例: "25m2"→"25m"になる)。
+  const quantityMatches = [...rawText.matchAll(/(\d+(?:\.\d+)?)\s*(立米|m3|m2|m³|m²|㎡|㎥|m)/g)];
   const quantityWorked =
     quantityMatches.length > 0
       ? quantityMatches.map((m) => `${m[1]}${m[2]}`).join("、")
@@ -369,7 +376,8 @@ export type VoiceIntent = "DAILY_REPORT" | "KY";
 
 const KY_INTENT_WORDS = ["危険予知", "ヒヤリハット", "ヒヤリ・ハット", "KY活動", "危険ポイント", "危険予知活動"];
 
-export async function classifyVoiceIntent(rawText: string): Promise<VoiceIntent> {
+export async function classifyVoiceIntent(rawTextInput: string): Promise<VoiceIntent> {
+  const rawText = normalizeExtractedText(rawTextInput);
   if (isMockMode()) {
     return mockClassifyVoiceIntent(rawText);
   }
@@ -422,7 +430,8 @@ const KY_RULES: { keyword: string; risk: string; countermeasure: string }[] = [
  * 一致するキーワードが無い場合は空の1行を返す(「異常なし」等を勝手に作らない)。
  * 返す内容は必ず現場責任者が確認・修正してから確定すること(REQUIREMENTS.md)。
  */
-export async function draftKyItems(workContent: string): Promise<KyItem[]> {
+export async function draftKyItems(workContentRaw: string): Promise<KyItem[]> {
+  const workContent = normalizeExtractedText(workContentRaw);
   const matched = KY_RULES.filter((r) => workContent.includes(r.keyword));
   if (matched.length === 0) return [{ risk: "", countermeasure: "" }];
 
