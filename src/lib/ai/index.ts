@@ -362,6 +362,41 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
   };
 }
 
+// ダッシュボードの「何でも音声で話す」窓口が、話した内容を日報かKY(危険予知)の
+// どちらに振り分けるかを判定する。どちらとも言い切れない内容(挨拶のみ・意味不明瞭等)は
+// 日報側に倒す(現場で最も使う頻度が高く、間違えても内容はそのまま確認・修正できるため)。
+export type VoiceIntent = "DAILY_REPORT" | "KY";
+
+const KY_INTENT_WORDS = ["危険予知", "ヒヤリハット", "ヒヤリ・ハット", "KY活動", "危険ポイント", "危険予知活動"];
+
+export async function classifyVoiceIntent(rawText: string): Promise<VoiceIntent> {
+  if (isMockMode()) {
+    return mockClassifyVoiceIntent(rawText);
+  }
+  try {
+    return await aiClassifyVoiceIntent(rawText);
+  } catch (err) {
+    console.error("[ai] classifyVoiceIntent: falling back to mock", err);
+    return mockClassifyVoiceIntent(rawText);
+  }
+}
+
+function mockClassifyVoiceIntent(rawText: string): VoiceIntent {
+  return KY_INTENT_WORDS.some((w) => rawText.includes(w)) ? "KY" : "DAILY_REPORT";
+}
+
+async function aiClassifyVoiceIntent(rawText: string): Promise<VoiceIntent> {
+  const system = `あなたは建設現場の音声入力を振り分けるアシスタントです。
+話された内容が次のどちらに近いか判定し、"DAILY_REPORT" または "KY" のどちらか一語だけを出力してください
+(説明文は一切不要です)。
+- DAILY_REPORT: その日の作業内容・作業員数・使用機械・時間・天候などを報告する内容(作業日報)
+- KY: これから行う作業の危険ポイント・注意点を予知する内容(危険予知活動、KY活動)
+判断に迷う場合は必ず DAILY_REPORT としてください。`;
+
+  const raw = (await callAnthropic(system, rawText)).trim();
+  return raw.includes("KY") ? "KY" : "DAILY_REPORT";
+}
+
 export type KyItem = { risk: string; countermeasure: string };
 
 // 作業内容に含まれるキーワードから、一般的な危険ポイント・対策の候補を返す辞書。

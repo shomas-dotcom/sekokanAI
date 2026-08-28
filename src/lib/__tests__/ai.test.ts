@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { draftDailyReportFromText, draftQuoteItemsFromText, draftKyItems } from "@/lib/ai";
+import { draftDailyReportFromText, draftQuoteItemsFromText, draftKyItems, classifyVoiceIntent } from "@/lib/ai";
 
 function mockAnthropicResponse(text: string, ok = true) {
   return {
@@ -108,6 +108,22 @@ describe("draftKyItems (モック実装)", () => {
   it("一致するキーワードが無い場合は空の1行を返す(「異常なし」等を勝手に作らない)", async () => {
     const items = await draftKyItems("事務所で書類整理");
     expect(items).toEqual([{ risk: "", countermeasure: "" }]);
+  });
+});
+
+describe("classifyVoiceIntent (モック実装、ダッシュボードの音声振り分け窓口)", () => {
+  it("危険予知に関する内容はKYと判定する", async () => {
+    expect(await classifyVoiceIntent("本日の危険予知活動。バックホウ使用時の接触に注意する。")).toBe("KY");
+  });
+
+  it("それ以外の内容(通常の作業報告)は日報と判定する", async () => {
+    expect(await classifyVoiceIntent("今日は坂戸市役所の現場。作業員4名。8時開始、17時終了。")).toBe(
+      "DAILY_REPORT"
+    );
+  });
+
+  it("判断に迷う短い内容も日報側に倒す(現場で使う頻度が高いため)", async () => {
+    expect(await classifyVoiceIntent("お疲れ様です。")).toBe("DAILY_REPORT");
   });
 });
 

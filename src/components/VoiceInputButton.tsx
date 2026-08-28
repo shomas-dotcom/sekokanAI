@@ -39,7 +39,8 @@ export function VoiceInputButton({
   /** trueの場合、停止するまで話した内容を蓄積し続ける(日報など長い発話向け) */
   continuous?: boolean;
   onTranscript?: (text: string) => void;
-  size?: "sm" | "lg";
+  /** xlは「話して記録する」ページ専用の特大サイズ(ベテラン・年配の方でも押しやすいように) */
+  size?: "sm" | "lg" | "xl";
   className?: string;
 }) {
   const [supported, setSupported] = useState(true);
@@ -118,14 +119,15 @@ export function VoiceInputButton({
     );
   }
 
-  if (size === "lg") {
+  if (size === "lg" || size === "xl") {
+    const dimensions = size === "xl" ? "h-36 w-36 text-6xl" : "h-24 w-24 text-4xl";
     return (
       <button
         type="button"
         onClick={toggle}
         className={
           className ??
-          `flex h-24 w-24 items-center justify-center rounded-full text-4xl shadow-lg transition ${
+          `flex ${dimensions} items-center justify-center rounded-full shadow-lg transition ${
             listening
               ? "bg-gradient-to-br from-rose-500 to-orange-500 animate-pulse text-white shadow-rose-500/40"
               : "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-indigo-600/40 hover:scale-105"

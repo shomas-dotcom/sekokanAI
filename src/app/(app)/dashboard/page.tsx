@@ -110,6 +110,14 @@ export default async function DashboardPage() {
         <p className="mt-1 text-sm text-slate-500">{user.company.name} の概況</p>
       </div>
 
+      <Link
+        href="/voice-entry"
+        className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 px-6 py-5 text-xl font-bold text-white shadow-lg shadow-indigo-600/30 transition hover:scale-[1.01]"
+      >
+        <span className="text-3xl">🎤</span>
+        話して記録する
+      </Link>
+
       <div>
         <h2 className="mb-2 text-sm font-semibold text-slate-500">今日の現場</h2>
         {todaysProjects.length === 0 ? (
@@ -130,16 +138,17 @@ export default async function DashboardPage() {
                   <p className="text-xs text-slate-500">{project.customer.name}</p>
                   <p className="text-lg font-bold text-slate-900">{project.name}</p>
                 </div>
-                <div className="flex items-center gap-4">
-                  <Link href={`/projects/${project.id}`} className="text-sm font-medium text-slate-500 underline">
-                    現場を開く
-                  </Link>
+                <div className="flex flex-col items-center gap-1.5">
                   <Link
-                    href={`/daily-reports/new?projectId=${project.id}`}
-                    className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-3xl text-white shadow-lg shadow-indigo-600/40 transition hover:scale-105"
-                    aria-label="AIに話す(日報作成)"
+                    href={`/voice-entry?projectId=${project.id}`}
+                    className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-4xl text-white shadow-lg shadow-indigo-600/40 transition hover:scale-105"
+                    aria-label="話して記録する"
                   >
                     🎤
+                  </Link>
+                  <span className="text-xs font-semibold text-slate-600">話して記録</span>
+                  <Link href={`/projects/${project.id}`} className="text-xs font-medium text-slate-500 underline">
+                    現場を開く
                   </Link>
                 </div>
               </Card>
