@@ -15,6 +15,7 @@ import {
 } from "../actions";
 import { Tabs } from "@/components/Tabs";
 import { EntityFileSection } from "@/components/entityFiles/EntityFileSection";
+import { TextareaWithVoice } from "@/components/TextareaWithVoice";
 
 const inputClass =
   "w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30";
@@ -248,7 +249,7 @@ export default async function InvoiceDetailPage({
           </label>
           <label className="flex flex-col gap-1 text-sm text-slate-700 sm:col-span-2">
             備考
-            <textarea name="notes" defaultValue={invoice.notes ?? ""} rows={2} disabled={!isDraft} className={inputClass} />
+            <TextareaWithVoice name="notes" defaultValue={invoice.notes ?? ""} rows={2} disabled={!isDraft} />
           </label>
           {isDraft && <button className={`${primaryButtonClass} sm:col-span-2 sm:w-fit`}>更新する</button>}
         </form>

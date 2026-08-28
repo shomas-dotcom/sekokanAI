@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { CustomerForm } from "../CustomerForm";
 import { BusinessCardScanner } from "../BusinessCardScanner";
-import { createCustomerAction } from "../actions";
+import { createCustomerAction, scanCustomerVoiceAction } from "../actions";
 import { Card } from "@/components/ui";
+import { VoiceFormFiller } from "@/components/VoiceFormFiller";
 import type { BusinessCardExtraction } from "@/lib/ai";
 
 export default function NewCustomerPage() {
@@ -35,8 +36,13 @@ export default function NewCustomerPage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-bold tracking-tight text-slate-900">顧客を追加</h1>
-      <div className="max-w-lg">
+      <div className="flex max-w-lg flex-col gap-3">
         <BusinessCardScanner onExtracted={handleExtracted} />
+        <VoiceFormFiller
+          action={scanCustomerVoiceAction}
+          onExtracted={handleExtracted}
+          placeholder="会社名・担当者・電話番号・メールアドレスなど"
+        />
       </div>
       <Card className="max-w-lg">
         <CustomerForm

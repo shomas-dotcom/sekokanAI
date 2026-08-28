@@ -554,6 +554,11 @@ export async function draftConstructionPlanSection(
 // 画面で「AI連携が未設定のため読み取れません」と案内すること(REQUIREMENTS.mdの
 // 「AIが判断できない情報を勝手に生成しない」方針に従い、それらしい偽データは作らない)。
 
+// --- 登録フォームの一括音声入力(2026-08-28追記) ---------------------------
+//
+// 顧客登録は名刺撮影(画像)と音声入力の両方から同じ項目を埋められるようにする。
+// 抽出結果の形はBusinessCardExtractionをそのまま使い回す(項目が完全に一致するため)。
+
 export type BusinessCardExtraction = {
   companyName: string | null;
   personName: string | null;
@@ -643,4 +648,147 @@ async function aiExtractBusinessCard(
   const confidence: BusinessCardExtraction["confidence"] = coreFieldsFilled >= 3 ? "high" : "needs_review";
 
   return { ...fields, confidence };
+}
+
+// 電話・メールアドレスは正規表現だけでも十分実用的に取れるため、名刺OCRと違い
+// AI未設定時でもルールベースのモックで代用する(REQUIREMENTS.mdの
+// 「単価等それ自体を推測で作らない」対象ではなく、単なる書式抽出のため)。
+const PHONE_PATTERN = /(0\d{1,4}-\d{1,4}-\d{3,4})/;
+const MOBILE_PATTERN = /(0[7-9]0-\d{4}-\d{4})/;
+const EMAIL_PATTERN = /[\w.+-]+@[\w-]+\.[\w.-]+/;
+
+function extractPrefixed(text: string, labels: string[]): string | null {
+  for (const label of labels) {
+    const match = text.match(new RegExp(`${label}[はが:：]?\\s*([^\\s、。]+)`));
+    if (match) return match[1];
+  }
+  return null;
+}
+
+export async function extractCustomerFieldsFromText(text: string): Promise<BusinessCardExtraction> {
+  if (isMockMode()) {
+    return mockExtractCustomerFields(text);
+  }
+  try {
+    return await aiExtractCustomerFields(text);
+  } catch (err) {
+    console.error("[ai] extractCustomerFieldsFromText: falling back to mock", err);
+    return mockExtractCustomerFields(text);
+  }
+}
+
+function mockExtractCustomerFields(rawText: string): BusinessCardExtraction {
+  const mobileMatch = rawText.match(MOBILE_PATTERN);
+  const phoneMatch = rawText.match(PHONE_PATTERN);
+  // 携帯番号(070/080/090)は電話番号のパターンにも一致してしまうため、携帯として
+  // 一度取れたら電話番号側からは除外する
+  const phone = phoneMatch && phoneMatch[0] !== mobileMatch?.[0] ? phoneMatch[0] : null;
+
+  const fields: Omit<BusinessCardExtraction, "confidence"> = {
+    companyName: extractPrefixed(rawText, ["会社名", "会社", "御中"]),
+    personName: extractPrefixed(rawText, ["担当者", "担当", "氏名", "名前"]),
+    position: extractPrefixed(rawText, ["役職"]),
+    department: extractPrefixed(rawText, ["部署"]),
+    postalCode: extractPrefixed(rawText, ["郵便番号"]),
+    address: extractPrefixed(rawText, ["住所"]),
+    phone,
+    mobilePhone: mobileMatch?.[0] ?? null,
+    fax: extractPrefixed(rawText, ["FAX", "ファックス"]),
+    email: rawText.match(EMAIL_PATTERN)?.[0] ?? null,
+    companyUrl: extractPrefixed(rawText, ["URL", "ホームページ", "サイト"]),
+    notes: null,
+  };
+  const coreFieldsFilled = [fields.companyName, fields.personName, fields.phone, fields.email].filter(
+    Boolean
+  ).length;
+  return { ...fields, confidence: coreFieldsFilled >= 2 ? "high" : "needs_review" };
+}
+
+async function aiExtractCustomerFields(text: string): Promise<BusinessCardExtraction> {
+  const system = `あなたは建設会社の事務担当者を補助するアシスタントです。
+話し言葉または自由記述のテキストから、取引先の情報を読み取ってください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"companyName": string|null, "personName": string|null, "position": string|null, "department": string|null, "postalCode": string|null, "address": string|null, "phone": string|null, "mobilePhone": string|null, "fax": string|null, "email": string|null, "companyUrl": string|null}
+最も重要な注意: 文中に述べられていない項目は、絶対に推測で埋めずnullにしてください。`;
+
+  const raw = await callAnthropic(system, text);
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+
+  const asStringOrNull = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const fields: Omit<BusinessCardExtraction, "confidence"> = {
+    companyName: asStringOrNull(parsed.companyName),
+    personName: asStringOrNull(parsed.personName),
+    position: asStringOrNull(parsed.position),
+    department: asStringOrNull(parsed.department),
+    postalCode: asStringOrNull(parsed.postalCode),
+    address: asStringOrNull(parsed.address),
+    phone: asStringOrNull(parsed.phone),
+    mobilePhone: asStringOrNull(parsed.mobilePhone),
+    fax: asStringOrNull(parsed.fax),
+    email: asStringOrNull(parsed.email),
+    companyUrl: asStringOrNull(parsed.companyUrl),
+    notes: null,
+  };
+  const coreFieldsFilled = [fields.companyName, fields.personName, fields.phone, fields.email].filter(
+    Boolean
+  ).length;
+  return { ...fields, confidence: coreFieldsFilled >= 2 ? "high" : "needs_review" };
+}
+
+export type EmployeeFieldExtraction = {
+  name: string | null;
+  nameKana: string | null;
+  position: string | null;
+  email: string | null;
+  phone: string | null;
+  notes: string | null;
+  confidence: "high" | "needs_review";
+};
+
+export async function extractEmployeeFieldsFromText(text: string): Promise<EmployeeFieldExtraction> {
+  if (isMockMode()) {
+    return mockExtractEmployeeFields(text);
+  }
+  try {
+    return await aiExtractEmployeeFields(text);
+  } catch (err) {
+    console.error("[ai] extractEmployeeFieldsFromText: falling back to mock", err);
+    return mockExtractEmployeeFields(text);
+  }
+}
+
+function mockExtractEmployeeFields(rawText: string): EmployeeFieldExtraction {
+  const fields: Omit<EmployeeFieldExtraction, "confidence"> = {
+    name: extractPrefixed(rawText, ["氏名", "名前"]),
+    nameKana: extractPrefixed(rawText, ["フリガナ", "ふりがな"]),
+    position: extractPrefixed(rawText, ["役職"]),
+    email: rawText.match(EMAIL_PATTERN)?.[0] ?? null,
+    phone: rawText.match(MOBILE_PATTERN)?.[0] ?? rawText.match(PHONE_PATTERN)?.[0] ?? null,
+    notes: null,
+  };
+  return { ...fields, confidence: fields.name ? "high" : "needs_review" };
+}
+
+async function aiExtractEmployeeFields(text: string): Promise<EmployeeFieldExtraction> {
+  const system = `あなたは建設会社の事務担当者を補助するアシスタントです。
+話し言葉または自由記述のテキストから、従業員の情報を読み取ってください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"name": string|null, "nameKana": string|null, "position": string|null, "email": string|null, "phone": string|null}
+最も重要な注意: 文中に述べられていない項目は、絶対に推測で埋めずnullにしてください。`;
+
+  const raw = await callAnthropic(system, text);
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+
+  const asStringOrNull = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const fields: Omit<EmployeeFieldExtraction, "confidence"> = {
+    name: asStringOrNull(parsed.name),
+    nameKana: asStringOrNull(parsed.nameKana),
+    position: asStringOrNull(parsed.position),
+    email: asStringOrNull(parsed.email),
+    phone: asStringOrNull(parsed.phone),
+    notes: null,
+  };
+  return { ...fields, confidence: fields.name ? "high" : "needs_review" };
 }

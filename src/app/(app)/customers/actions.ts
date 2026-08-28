@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { validateVisionImageFile } from "@/lib/fileValidation";
-import { extractBusinessCardFromImage, type BusinessCardExtraction } from "@/lib/ai";
+import { extractBusinessCardFromImage, extractCustomerFieldsFromText, type BusinessCardExtraction } from "@/lib/ai";
 
 export type CustomerFormState = { error?: string } | undefined;
 
@@ -157,4 +157,22 @@ export async function deleteCustomerAction(formData: FormData) {
 
   revalidatePath("/customers");
   redirect("/customers");
+}
+
+export type CustomerVoiceFillState = { error?: string; extraction?: BusinessCardExtraction } | undefined;
+
+/**
+ * 「まとめて音声入力する」欄。名刺撮影と同じ項目・同じ確認フローになるよう、
+ * 抽出結果の形はBusinessCardExtractionをそのまま使う。ここでもDB保存はしない。
+ */
+export async function scanCustomerVoiceAction(
+  _prevState: CustomerVoiceFillState,
+  formData: FormData
+): Promise<CustomerVoiceFillState> {
+  await requireUser();
+  const transcript = String(formData.get("transcript") ?? "").trim();
+  if (!transcript) return { error: "マイクで話すか、内容を入力してください。" };
+
+  const extraction = await extractCustomerFieldsFromText(transcript);
+  return { extraction };
 }

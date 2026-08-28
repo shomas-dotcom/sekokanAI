@@ -14,6 +14,7 @@ import {
 } from "../actions";
 import { Tabs } from "@/components/Tabs";
 import { EntityFileSection } from "@/components/entityFiles/EntityFileSection";
+import { TextareaWithVoice } from "@/components/TextareaWithVoice";
 
 function toDateInputValue(value: Date | null): string {
   if (!value) return "";
@@ -155,7 +156,7 @@ export default async function ContractDetailPage({
             />
           </FieldLabel>
           <FieldLabel label="特約事項(任意)">
-            <Textarea name="specialTerms" rows={2} defaultValue={contract.specialTerms ?? ""} disabled={!isDraft} />
+            <TextareaWithVoice name="specialTerms" rows={2} defaultValue={contract.specialTerms ?? ""} disabled={!isDraft} />
           </FieldLabel>
 
           <div className="sm:col-span-2 grid grid-cols-2 gap-4 rounded-xl bg-slate-50 p-3 text-sm">

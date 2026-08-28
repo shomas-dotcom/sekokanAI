@@ -5,6 +5,8 @@ import {
   draftKyItems,
   classifyVoiceIntent,
   extractBusinessCardFromImage,
+  extractCustomerFieldsFromText,
+  extractEmployeeFieldsFromText,
 } from "@/lib/ai";
 
 function mockAnthropicResponse(text: string, ok = true) {
@@ -161,6 +163,21 @@ describe("AI関数の異常系入力(空文字・記号のみ等でも例外を�
     expect(result.confidence).toBe("unavailable");
     expect(result.companyName).toBeNull();
     expect(result.personName).toBeNull();
+  });
+
+  it("extractCustomerFieldsFromTextはAI未設定でも電話番号・メールアドレスを正規表現で拾える", async () => {
+    const result = await extractCustomerFieldsFromText(
+      "会社名は若葉産業。担当は山田さん。電話は03-1234-5678。携帯は090-1234-5678。メールはyamada@example.comです。"
+    );
+    expect(result.companyName).toBe("若葉産業");
+    expect(result.phone).toBe("03-1234-5678");
+    expect(result.mobilePhone).toBe("090-1234-5678");
+    expect(result.email).toBe("yamada@example.com");
+  });
+
+  it("extractEmployeeFieldsFromTextはAI未設定でも電話番号を正規表現で拾える", async () => {
+    const result = await extractEmployeeFieldsFromText("氏名は田中太郎。電話は090-1111-2222。");
+    expect(result.phone).toBe("090-1111-2222");
   });
 });
 

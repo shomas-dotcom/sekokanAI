@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { extractEmployeeFieldsFromText, type EmployeeFieldExtraction } from "@/lib/ai";
 import type { EmploymentType } from "@/generated/prisma/enums";
 
 export type EmployeeFormState = { error?: string } | undefined;
@@ -96,6 +97,21 @@ export async function deleteEmployeeAction(formData: FormData) {
 
   revalidatePath("/employees");
   redirect("/employees");
+}
+
+export type EmployeeVoiceFillState = { error?: string; extraction?: EmployeeFieldExtraction } | undefined;
+
+/** 「まとめて音声入力する」欄。ここでもDB保存はせず、フォームへの仮入力に留める。 */
+export async function scanEmployeeVoiceAction(
+  _prevState: EmployeeVoiceFillState,
+  formData: FormData
+): Promise<EmployeeVoiceFillState> {
+  await requireUser();
+  const transcript = String(formData.get("transcript") ?? "").trim();
+  if (!transcript) return { error: "マイクで話すか、内容を入力してください。" };
+
+  const extraction = await extractEmployeeFieldsFromText(transcript);
+  return { extraction };
 }
 
 export type QualificationFormState = { error?: string } | undefined;
