@@ -13,6 +13,8 @@ import {
   cancelInvoiceAction,
   deleteInvoiceAction,
 } from "../actions";
+import { Tabs } from "@/components/Tabs";
+import { EntityFileSection } from "@/components/entityFiles/EntityFileSection";
 
 const inputClass =
   "w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30";
@@ -38,14 +40,20 @@ export default async function InvoiceDetailPage({
   const { error } = await searchParams;
   const user = await requireUser();
 
-  const invoice = await prisma.invoice.findFirst({
-    where: { id, companyId: user.companyId },
-    include: {
-      project: { include: { customer: true } },
-      contract: true,
-      items: { orderBy: { sortOrder: "asc" } },
-    },
-  });
+  const [invoice, files] = await Promise.all([
+    prisma.invoice.findFirst({
+      where: { id, companyId: user.companyId },
+      include: {
+        project: { include: { customer: true } },
+        contract: true,
+        items: { orderBy: { sortOrder: "asc" } },
+      },
+    }),
+    prisma.entityFile.findMany({
+      where: { entityType: "INVOICE", entityId: id, companyId: user.companyId },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
   if (!invoice) notFound();
 
   const isDraft = invoice.status === "DRAFT";
@@ -74,6 +82,12 @@ export default async function InvoiceDetailPage({
         </div>
       </div>
 
+      <Tabs
+        tabs={[
+          {
+            label: "基本情報",
+            content: (
+              <div className="flex flex-col gap-6">
       {error === "exceeds" && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           この操作を行うと累計請求額が契約金額(税込)を超えるため、保存できませんでした。数量・単価を見直してください。
@@ -270,6 +284,15 @@ export default async function InvoiceDetailPage({
           </form>
         )}
       </div>
+              </div>
+            ),
+          },
+          {
+            label: "ファイル参照",
+            content: <EntityFileSection entityType="INVOICE" entityId={invoice.id} files={files} />,
+          },
+        ]}
+      />
     </div>
   );
 }

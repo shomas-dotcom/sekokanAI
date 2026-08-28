@@ -85,6 +85,7 @@ model Company {
   rateMasterItems           RateMasterItem[]
   kyActivities              KyActivity[]
   projectFiles              ProjectFile[]
+  entityFiles               EntityFile[]
 }
 
 // Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
@@ -394,6 +395,36 @@ model ProjectFile {
 
   @@index([companyId])
   @@index([projectId])
+}
+
+// 顧客・見積・契約書・請求書・従業員の各詳細画面に共通の「ファイル参照」タブ用。
+// ProjectFileと同じ用途だが、対象が5種類に及ぶため専用テーブルを5つ作らず、
+// entityType+entityIdで対象を判別する1テーブルにまとめる(Prismaは真の多態関連を
+// サポートしないため、外部キー制約は張らずアプリ側でcompanyId+entityType+entityIdの
+// 組み合わせを必ず検証すること)。従業員の身分証(個人情報)はここでは扱わない
+// (身分証は読み取り後に画像を保存しない別の仕組みとする)。
+enum FileEntityType {
+  CUSTOMER
+  QUOTE
+  CONTRACT
+  INVOICE
+  EMPLOYEE
+}
+
+model EntityFile {
+  id         String         @id @default(cuid())
+  companyId  String
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  entityType FileEntityType
+  entityId   String
+  fileName   String
+  mimeType   String
+  data       Bytes
+  size       Int
+  createdAt  DateTime       @default(now())
+
+  @@index([companyId])
+  @@index([entityType, entityId])
 }
 
 enum QuoteStatus {

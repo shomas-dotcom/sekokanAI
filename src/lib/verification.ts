@@ -68,3 +68,20 @@ export async function sendPasswordResetEmail(userId: string, email: string): Pro
     text: `以下のリンクからパスワードを再設定してください(1時間有効)。\n\n${url}\n\n心当たりがない場合は、このメールは無視してください。パスワードは変更されません。`,
   });
 }
+
+// チームメンバー招待もパスワード設定用のリンクを送る点は再設定と同じ仕組みでよいため、
+// トークンの種類(PASSWORD_RESET)は増やさずそのまま流用する(文面だけ招待用に変える)。
+export async function sendTeamInviteEmail(
+  userId: string,
+  email: string,
+  companyName: string,
+  inviterName: string
+): Promise<void> {
+  const token = await issueToken(userId, "PASSWORD_RESET");
+  const url = `${process.env.APP_URL || "http://localhost:3000"}/reset-password?token=${token}`;
+  await sendEmail({
+    to: email,
+    subject: `【現場AI】${companyName}のアカウントが作成されました`,
+    text: `${inviterName}さんから、${companyName}の現場AIアカウントの利用者として招待されました。\n\n以下のリンクからパスワードを設定してログインしてください(1時間有効)。\n\n${url}\n\n心当たりがない場合は、このメールは無視してください。`,
+  });
+}

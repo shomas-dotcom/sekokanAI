@@ -13,6 +13,8 @@ import {
   updateQuoteItemAction,
   deleteQuoteItemAction,
 } from "../actions";
+import { Tabs } from "@/components/Tabs";
+import { EntityFileSection } from "@/components/entityFiles/EntityFileSection";
 
 const inputClass =
   "w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-900 shadow-sm transition focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30";
@@ -29,13 +31,19 @@ export default async function QuoteDetailPage({
   const { id } = await params;
   const user = await requireUser();
 
-  const quote = await prisma.quote.findFirst({
-    where: { id, companyId: user.companyId },
-    include: {
-      project: { include: { customer: true } },
-      items: { orderBy: { sortOrder: "asc" } },
-    },
-  });
+  const [quote, files] = await Promise.all([
+    prisma.quote.findFirst({
+      where: { id, companyId: user.companyId },
+      include: {
+        project: { include: { customer: true } },
+        items: { orderBy: { sortOrder: "asc" } },
+      },
+    }),
+    prisma.entityFile.findMany({
+      where: { entityType: "QUOTE", entityId: id, companyId: user.companyId },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
   if (!quote) notFound();
 
   const totals = computeQuoteTotals(quote.items, quote.taxRatePercent, quote.discountAmount);
@@ -69,6 +77,55 @@ export default async function QuoteDetailPage({
         </div>
       </div>
 
+      <Tabs
+        tabs={[
+          { label: "基本情報", content: <QuoteBasicInfo quote={quote} totals={totals} profitability={profitability} belowTarget={belowTarget} targetRate={targetRate} /> },
+          {
+            label: "ファイル参照",
+            content: <EntityFileSection entityType="QUOTE" entityId={quote.id} files={files} />,
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
+type QuoteBasicInfoItem = {
+  id: string;
+  itemName: string;
+  spec: string | null;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  priceSource: string;
+  costPrice: number | null;
+  costCategory: string | null;
+  remarks: string | null;
+};
+
+function QuoteBasicInfo({
+  quote,
+  totals,
+  profitability,
+  belowTarget,
+  targetRate,
+}: {
+  quote: {
+    id: string;
+    title: string;
+    status: string;
+    taxRatePercent: number;
+    discountAmount: number;
+    notes: string | null;
+    items: QuoteBasicInfoItem[];
+  };
+  totals: ReturnType<typeof computeQuoteTotals>;
+  profitability: ReturnType<typeof computeQuoteProfitability>;
+  belowTarget: boolean;
+  targetRate: number | null;
+}) {
+  return (
+    <div className="flex flex-col gap-6">
       {/* 明細 */}
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/50">
         <table className="w-full min-w-[900px] text-left text-sm">

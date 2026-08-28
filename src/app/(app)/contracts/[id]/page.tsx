@@ -12,6 +12,8 @@ import {
   cancelContractAction,
   deleteContractAction,
 } from "../actions";
+import { Tabs } from "@/components/Tabs";
+import { EntityFileSection } from "@/components/entityFiles/EntityFileSection";
 
 function toDateInputValue(value: Date | null): string {
   if (!value) return "";
@@ -27,10 +29,16 @@ export default async function ContractDetailPage({
   const { id } = await params;
   const user = await requireUser();
 
-  const contract = await prisma.contract.findFirst({
-    where: { id, companyId: user.companyId },
-    include: { project: { include: { customer: true } }, invoices: true },
-  });
+  const [contract, files] = await Promise.all([
+    prisma.contract.findFirst({
+      where: { id, companyId: user.companyId },
+      include: { project: { include: { customer: true } }, invoices: true },
+    }),
+    prisma.entityFile.findMany({
+      where: { entityType: "CONTRACT", entityId: id, companyId: user.companyId },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
   if (!contract) notFound();
 
   const clauses = JSON.parse(contract.clausesJson) as ContractClause[];
@@ -66,6 +74,12 @@ export default async function ContractDetailPage({
         </div>
       </div>
 
+      <Tabs
+        tabs={[
+          {
+            label: "基本情報",
+            content: (
+              <div className="flex flex-col gap-6">
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
         本システムで作成される文書は一般的なひな形です。個別案件の内容、取引条件、法令および発注者指定条件に応じて、行政書士、弁護士、税理士等の専門家へ確認してください。
       </div>
@@ -232,6 +246,15 @@ export default async function ContractDetailPage({
           </form>
         )}
       </div>
+              </div>
+            ),
+          },
+          {
+            label: "ファイル参照",
+            content: <EntityFileSection entityType="CONTRACT" entityId={contract.id} files={files} />,
+          },
+        ]}
+      />
     </div>
   );
 }
