@@ -61,6 +61,54 @@ async function callAnthropic(system: string, userMessage: string): Promise<strin
   return text;
 }
 
+// 名刺・身分証等の画像を直接読ませる呼び出し。AnthropicのMessages APIは
+// 画像をbase64でcontentブロックに含める形式に対応している(mediaTypeは
+// image/jpeg・image/png・image/webp・image/gifのみ。HEIC等は事前に弾く
+// ことをvalidateVisionImageFile側で保証する前提)。
+async function callAnthropicVision(
+  system: string,
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  userText: string
+): Promise<string> {
+  const apiKey = process.env.AI_API_KEY;
+  if (!apiKey) throw new Error("AI_API_KEY is not set");
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 1024,
+      temperature: 0.2,
+      system,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: base64Image } },
+            { type: "text", text: userText },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Anthropic API error: ${response.status} ${body.slice(0, 200)}`);
+  }
+
+  const data = (await response.json()) as { content?: { text?: string }[] };
+  const text = data.content?.[0]?.text;
+  if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
+  return text;
+}
+
 /** Claudeが```json``` で囲んで返すことがあるため取り除いてからJSONとして解釈する。 */
 function extractJson<T>(raw: string): T | null {
   const cleaned = raw.replace(/```json\s*|```\s*$/g, "").trim();
@@ -496,4 +544,103 @@ export async function draftConstructionPlanSection(
       "この文章は入力メモをAIが箇条書きから整形しただけであり、内容(数値・工法・法令適合性等)の正確性は未確認です。提出前に必ず人間が確認してください。",
     ],
   };
+}
+
+// --- 名刺カメラ自動登録(2026-08-28追記) -----------------------------------
+//
+// 名刺の読み取りは文字抽出そのものにAIが必要な処理であり、他の機能のような
+// 「ルールベースのモック」で代用できる性質のものではない。そのため
+// AI_API_KEY未設定時は全項目null・confidence="unavailable"を返し、呼び出し側の
+// 画面で「AI連携が未設定のため読み取れません」と案内すること(REQUIREMENTS.mdの
+// 「AIが判断できない情報を勝手に生成しない」方針に従い、それらしい偽データは作らない)。
+
+export type BusinessCardExtraction = {
+  companyName: string | null;
+  personName: string | null;
+  position: string | null; // 役職
+  department: string | null; // 部署名
+  postalCode: string | null;
+  address: string | null;
+  phone: string | null;
+  mobilePhone: string | null;
+  fax: string | null;
+  email: string | null;
+  companyUrl: string | null;
+  notes: string | null;
+  // high: ほぼ全項目を読み取れた / needs_review: 一部しか読み取れなかった(必ず人間の確認が必要)
+  // unavailable: AI未設定、またはAI呼び出し自体が失敗した(読み取り不能)
+  confidence: "high" | "needs_review" | "unavailable";
+};
+
+const EMPTY_BUSINESS_CARD_EXTRACTION: Omit<BusinessCardExtraction, "confidence"> = {
+  companyName: null,
+  personName: null,
+  position: null,
+  department: null,
+  postalCode: null,
+  address: null,
+  phone: null,
+  mobilePhone: null,
+  fax: null,
+  email: null,
+  companyUrl: null,
+  notes: null,
+};
+
+export async function extractBusinessCardFromImage(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp"
+): Promise<BusinessCardExtraction> {
+  if (isMockMode()) {
+    return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
+  }
+  try {
+    return await aiExtractBusinessCard(base64Image, mediaType);
+  } catch (err) {
+    console.error("[ai] extractBusinessCardFromImage: failed", err);
+    return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
+  }
+}
+
+async function aiExtractBusinessCard(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp"
+): Promise<BusinessCardExtraction> {
+  const system = `あなたは日本の建設会社の事務担当者を補助するアシスタントです。
+渡された名刺の画像から情報を読み取ってください。縦書き/横書き、日本語/英語、多少傾いた
+写真にも対応してください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"companyName": string|null, "personName": string|null, "position": string|null, "department": string|null, "postalCode": string|null, "address": string|null, "phone": string|null, "mobilePhone": string|null, "fax": string|null, "email": string|null, "companyUrl": string|null}
+最も重要な注意: 名刺に印字されていない/読み取れない項目は、絶対に推測で埋めずnullにしてください。
+電話番号は「TEL」、携帯は「携帯」「Mobile」「Cell」、FAXは「FAX」の表記を手がかりに区別してください。`;
+
+  const raw = await callAnthropicVision(system, base64Image, mediaType, "この名刺を読み取ってください。");
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+
+  const asStringOrNull = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+
+  const fields: Omit<BusinessCardExtraction, "confidence"> = {
+    companyName: asStringOrNull(parsed.companyName),
+    personName: asStringOrNull(parsed.personName),
+    position: asStringOrNull(parsed.position),
+    department: asStringOrNull(parsed.department),
+    postalCode: asStringOrNull(parsed.postalCode),
+    address: asStringOrNull(parsed.address),
+    phone: asStringOrNull(parsed.phone),
+    mobilePhone: asStringOrNull(parsed.mobilePhone),
+    fax: asStringOrNull(parsed.fax),
+    email: asStringOrNull(parsed.email),
+    companyUrl: asStringOrNull(parsed.companyUrl),
+    notes: null,
+  };
+
+  // 会社名・氏名のどちらも読めなかった場合は、実質的に使い物にならない結果として
+  // 明示的に「要確認」を強く伝える(needs_review)。それ以外は主要項目の充足度で判定する。
+  const coreFieldsFilled = [fields.companyName, fields.personName, fields.phone, fields.email].filter(
+    Boolean
+  ).length;
+  const confidence: BusinessCardExtraction["confidence"] = coreFieldsFilled >= 3 ? "high" : "needs_review";
+
+  return { ...fields, confidence };
 }

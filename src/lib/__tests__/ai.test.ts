@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { draftDailyReportFromText, draftQuoteItemsFromText, draftKyItems, classifyVoiceIntent } from "@/lib/ai";
+import {
+  draftDailyReportFromText,
+  draftQuoteItemsFromText,
+  draftKyItems,
+  classifyVoiceIntent,
+  extractBusinessCardFromImage,
+} from "@/lib/ai";
 
 function mockAnthropicResponse(text: string, ok = true) {
   return {
@@ -149,6 +155,13 @@ describe("AI関数の異常系入力(空文字・記号のみ等でも例外を�
     const items = await draftKyItems("");
     expect(items).toEqual([{ risk: "", countermeasure: "" }]);
   });
+
+  it("extractBusinessCardFromImageはAI未設定時、それらしい偽データを作らずunavailableを返す", async () => {
+    const result = await extractBusinessCardFromImage("dGVzdA==", "image/jpeg");
+    expect(result.confidence).toBe("unavailable");
+    expect(result.companyName).toBeNull();
+    expect(result.personName).toBeNull();
+  });
 });
 
 describe("AI_API_KEY設定時(本物のAI呼び出しモード、fetchはモック化する)", () => {
@@ -236,5 +249,72 @@ describe("AI_API_KEY設定時(本物のAI呼び出しモード、fetchはモッ�
     expect(draft.safetyNotes).toBeNull();
     expect(draft.unclearItems.map((i) => i.field)).toContain("安全事項");
     expect(draft.unclearItems.map((i) => i.field)).toContain("職長");
+  });
+
+  it("extractBusinessCardFromImageは名刺の読み取り結果をそのまま返す(単価等と違い機械的な突き合わせ対象がない)", async () => {
+    process.env.AI_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockAnthropicResponse(
+        JSON.stringify({
+          companyName: "若葉産業株式会社",
+          personName: "山田太郎",
+          position: "営業部長",
+          department: "営業部",
+          postalCode: "100-0001",
+          address: "東京都千代田区1-1-1",
+          phone: "03-1234-5678",
+          mobilePhone: "090-1234-5678",
+          fax: null,
+          email: "yamada@example.com",
+          companyUrl: "https://example.com",
+        })
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await extractBusinessCardFromImage("dGVzdA==", "image/jpeg");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.companyName).toBe("若葉産業株式会社");
+    expect(result.personName).toBe("山田太郎");
+    expect(result.mobilePhone).toBe("090-1234-5678");
+    expect(result.fax).toBeNull();
+    expect(result.confidence).toBe("high");
+  });
+
+  it("extractBusinessCardFromImageはAI呼び出しが失敗してもエラーを投げず、unavailableとして返す", async () => {
+    process.env.AI_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockAnthropicResponse("", false)));
+
+    const result = await extractBusinessCardFromImage("dGVzdA==", "image/jpeg");
+    expect(result.confidence).toBe("unavailable");
+    expect(result.companyName).toBeNull();
+  });
+
+  it("extractBusinessCardFromImageは読み取れた項目が少ない場合、要確認(needs_review)として返す", async () => {
+    process.env.AI_API_KEY = "test-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        mockAnthropicResponse(
+          JSON.stringify({
+            companyName: "若葉産業株式会社",
+            personName: null,
+            position: null,
+            department: null,
+            postalCode: null,
+            address: null,
+            phone: null,
+            mobilePhone: null,
+            fax: null,
+            email: null,
+            companyUrl: null,
+          })
+        )
+      )
+    );
+
+    const result = await extractBusinessCardFromImage("dGVzdA==", "image/jpeg");
+    expect(result.confidence).toBe("needs_review");
   });
 });

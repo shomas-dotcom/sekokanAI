@@ -40,3 +40,22 @@ export function validateDocumentFile(file: { type: string; size: number }): stri
   }
   return null;
 }
+
+// 名刺・身分証等をAI(Claude)に直接読ませる画像。AnthropicのVision APIは
+// HEIC/HEIFに対応していないため、写真アップロード(ALLOWED_IMAGE_MIME_TYPES)より
+// 対応形式を絞る(iPhoneでHEIC設定のまま撮影された場合は、JPEG/PNGでの再選択を促す)。
+export const ALLOWED_VISION_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
+export const MAX_VISION_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB(Anthropic API側の上限に対する余裕を見た値)
+
+export function validateVisionImageFile(file: { type: string; size: number }): string | null {
+  if (!ALLOWED_VISION_IMAGE_MIME_TYPES.includes(file.type)) {
+    return "この形式の画像は読み取れません(JPEGまたはPNGで撮影・選択してください。iPhoneの場合は「設定→カメラ→フォーマット→互換性優先」にするとJPEGで撮影できます)。";
+  }
+  if (file.size <= 0) {
+    return "ファイルが空です。";
+  }
+  if (file.size > MAX_VISION_IMAGE_BYTES) {
+    return "ファイルサイズが大きすぎます(10MBまで)。";
+  }
+  return null;
+}

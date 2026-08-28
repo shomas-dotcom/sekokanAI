@@ -315,8 +315,14 @@ model Customer {
   company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name        String
   contactName String?
+  position    String? // 担当者の役職(名刺読み取りで取得)
+  department  String? // 担当者の部署名(名刺読み取りで取得)
+  postalCode  String?
   phone       String?
+  mobilePhone String?
+  fax         String?
   email       String?
+  websiteUrl  String?
   address     String?
   notes       String?
   createdAt   DateTime  @default(now())
