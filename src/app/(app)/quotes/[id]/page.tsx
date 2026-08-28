@@ -59,6 +59,9 @@ export default async function QuoteDetailPage({
           <Link href={`/quotes/${quote.id}/print`} className={secondaryButtonClass}>
             印刷 / PDF保存
           </Link>
+          <a href={`/quotes/${quote.id}/xlsx`} className={secondaryButtonClass}>
+            Excel出力
+          </a>
           <form action={duplicateQuoteAction}>
             <input type="hidden" name="id" value={quote.id} />
             <button className={secondaryButtonClass}>複製</button>

@@ -84,6 +84,7 @@ model Company {
   employees                 Employee[]
   rateMasterItems           RateMasterItem[]
   kyActivities              KyActivity[]
+  projectFiles              ProjectFile[]
 }
 
 // Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
@@ -361,9 +362,29 @@ model Project {
   constructionPlans          ConstructionPlan[]
   members                    ProjectMember[]
   kyActivities               KyActivity[]
+  files                      ProjectFile[]
 
   @@index([companyId])
   @@index([customerId])
+}
+
+// 現場に紐づく参考資料(過去の見積書・仕様書等)。写真とは別枠で、PDF/Excel/Word等の
+// 書類を保存する。DB内BLOB保存はMVP措置であり、大量・大容量になった場合は外部
+// ストレージへの切替を検討する(写真と同じ制約、DEPLOYMENT.md参照)。
+model ProjectFile {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileName  String
+  mimeType  String
+  data      Bytes
+  size      Int
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([projectId])
 }
 
 enum QuoteStatus {

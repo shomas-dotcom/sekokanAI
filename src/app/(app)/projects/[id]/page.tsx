@@ -5,6 +5,13 @@ import { prisma } from "@/lib/prisma";
 import { ProjectForm } from "../ProjectForm";
 import { updateProjectAction, deleteProjectAction, updateProjectMembersAction } from "../actions";
 import { Card, Button } from "@/components/ui";
+import { FileDropZone } from "./files/FileDropZone";
+import { deleteProjectFileAction } from "./files/actions";
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
 
 export default async function EditProjectPage({
   params,
@@ -14,7 +21,7 @@ export default async function EditProjectPage({
   const { id } = await params;
   const user = await requireUser();
 
-  const [project, customers, quotes, contracts, invoices, employees, members, kyActivities] =
+  const [project, customers, quotes, contracts, invoices, employees, members, kyActivities, projectFiles] =
     await Promise.all([
       prisma.project.findFirst({ where: { id, companyId: user.companyId } }),
       prisma.customer.findMany({
@@ -28,6 +35,7 @@ export default async function EditProjectPage({
       prisma.employee.findMany({ where: { companyId: user.companyId }, orderBy: { name: "asc" } }),
       prisma.projectMember.findMany({ where: { projectId: id }, select: { employeeId: true } }),
       prisma.kyActivity.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { activityDate: "desc" } }),
+      prisma.projectFile.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
     ]);
   if (!project) notFound();
   const assignedEmployeeIds = new Set(members.map((m) => m.employeeId));
@@ -88,6 +96,50 @@ export default async function EditProjectPage({
         >
           作業員名簿・資格一覧(安全書類)を見る
         </Link>
+      </Card>
+
+      <Card>
+        <h2 className="font-semibold text-slate-900">参考資料(過去の見積書・仕様書など)</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          この案件に関係するファイルを置いておく場所です。中身をAIが読み取ることはありません。
+        </p>
+        <div className="mt-3">
+          <FileDropZone projectId={project.id} />
+        </div>
+        {projectFiles.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-400">まだファイルがありません。</p>
+        ) : (
+          <ul className="mt-3 flex flex-col gap-2">
+            {projectFiles.map((file) => (
+              <li
+                key={file.id}
+                className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              >
+                <a
+                  href={`/projects/${project.id}/files/${file.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate text-slate-700 underline"
+                >
+                  {file.fileName}
+                </a>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="text-xs text-slate-400">{formatFileSize(file.size)}</span>
+                  <span className="text-xs text-slate-400">
+                    {file.createdAt.toLocaleDateString("ja-JP")}
+                  </span>
+                  <form action={deleteProjectFileAction}>
+                    <input type="hidden" name="id" value={file.id} />
+                    <input type="hidden" name="projectId" value={project.id} />
+                    <button type="submit" className="text-xs text-rose-600 underline">
+                      削除
+                    </button>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
 
       <Card className="max-w-lg">

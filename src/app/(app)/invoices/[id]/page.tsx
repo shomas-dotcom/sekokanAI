@@ -68,6 +68,9 @@ export default async function InvoiceDetailPage({
           <Link href={`/invoices/${invoice.id}/print`} className={secondaryButtonClass}>
             印刷 / PDF保存
           </Link>
+          <a href={`/invoices/${invoice.id}/xlsx`} className={secondaryButtonClass}>
+            Excel出力
+          </a>
         </div>
       </div>
 
