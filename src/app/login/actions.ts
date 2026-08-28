@@ -31,7 +31,10 @@ export async function loginAction(
     return { error: "ログイン試行回数が上限に達しました。しばらく時間をおいて再度お試しください。" };
   }
 
-  const ok = user && !user.deletedAt ? await verify(password, user.passwordHash) : false;
+  // passwordHashがnull(Googleログインのみで作られたアカウント)の場合は
+  // パスワードでのログインを許可しない(誤って空文字と比較しないよう明示的に弾く)。
+  const ok =
+    user && !user.deletedAt && user.passwordHash ? await verify(password, user.passwordHash) : false;
 
   if (!user || user.deletedAt || !ok) {
     if (user && !user.deletedAt) {

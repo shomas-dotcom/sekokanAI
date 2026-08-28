@@ -226,7 +226,10 @@ model User {
   companyId           String
   company             Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   email               String              @unique
-  passwordHash        String
+  // Googleログインのみで作られたアカウントはパスワードを持たないためnull許可。
+  // ログイン処理側は必ずnullチェックしてから検証すること(空文字と誤認しない)。
+  passwordHash        String?
+  googleId            String?             @unique // GoogleのユーザーID(sub)。連携済みの場合のみ設定
   name                String
   role                UserRole            @default(MEMBER)
   emailVerifiedAt     DateTime? // null=メール未認証。未認証でもログイン自体は妨げない(画面上で案内のみ)

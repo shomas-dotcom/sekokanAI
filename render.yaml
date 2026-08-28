@@ -7,7 +7,9 @@ services:
     name: genba-ai
     runtime: node
     plan: free
-    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy && npm run build
+    # NODE_ENV=production だと npm install が devDependencies(prisma CLI含む)を
+    # 省略してしまうため --include=dev が必須(DEPLOYMENT.mdのトラブル対応履歴参照)
+    buildCommand: npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build
     startCommand: npm run start
     envVars:
       - key: NODE_ENV
@@ -22,6 +24,10 @@ services:
         sync: false # 未設定ならAI機能はモック応答のまま動作する
       - key: AI_API_PROVIDER
         value: anthropic
+      - key: GOOGLE_CLIENT_ID
+        sync: false # 未設定なら「Googleでログイン/登録」ボタンが非表示になるだけ
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       - key: RESEND_API_KEY
         sync: false # 未設定ならメール送信はログ出力のみのモックで動作する
       - key: EMAIL_FROM

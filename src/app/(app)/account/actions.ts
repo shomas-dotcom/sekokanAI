@@ -20,6 +20,12 @@ export async function withdrawAction(
   const user = await requireUser();
   const password = String(formData.get("password") ?? "");
 
+  // Googleログインのみのアカウント(パスワード未設定)は、この方法での退会確認ができない。
+  // (誤操作防止のためのパスワード確認自体ができないため、別途本人確認が必要)
+  if (!user.passwordHash) {
+    return { error: "Googleログインのアカウントは、この画面からは退会できません。お問い合わせください。" };
+  }
+
   const ok = await verify(password, user.passwordHash);
   if (!ok) {
     return { error: "パスワードが正しくありません。" };

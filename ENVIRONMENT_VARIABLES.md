@@ -10,6 +10,7 @@
 | `APP_URL` | 本番必須 | アプリの公開URL(メール本文のリンク生成等に使用) | 未設定 |
 | `AI_API_KEY` | 任意 | 未設定時はAI機能がモック応答(ルールベース)で動作する | 未設定 |
 | `AI_API_PROVIDER` | 任意 | AI抽象化レイヤーが参照するプロバイダ識別子(既定 `anthropic`) | 既定値 |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 任意 | 未設定時は「Googleでログイン/登録」ボタン自体が非表示になる(通常のメール登録・ログインには影響しない)。Google Cloud ConsoleでOAuthクライアントを作成し、承認済みリダイレクトURIに `{APP_URL}/api/auth/google/callback` を登録して発行する | 未設定 |
 | `RESEND_API_KEY` | 任意 | 未設定時はメール送信がログ出力のみのモックで動作する(メール認証・パスワード再設定に影響) | 未設定 |
 | `EMAIL_FROM` | 任意 | 送信元メールアドレス | 未設定 |
 | `STRIPE_SECRET_KEY` | 任意 | 未設定時は決済が「開発用の疑似トライアル」で動作する(実課金なし) | 未設定 |
