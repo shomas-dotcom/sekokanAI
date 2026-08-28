@@ -35,6 +35,9 @@ export type InvoiceXlsxInput = {
   companyBankAccountType: string | null;
   companyBankAccountNumber: string | null;
   companyBankAccountHolder: string | null;
+  // 電子印鑑(角印・代表印などのPNG/JPEG画像)。用意できたら自社情報の脇に自動で
+  // 貼り込む。未設定の場合は印を押すための空欄(枠)だけを用意する。
+  companySealImage?: { buffer: Buffer; extension: "png" | "jpeg" };
   customerName: string;
   customerAddress: string | null;
   invoiceNumber: string;
@@ -96,8 +99,10 @@ export async function buildInvoiceXlsx(input: InvoiceXlsxInput): Promise<Buffer>
   ws.getColumn(6).width = 8;
   ws.getColumn(7).width = 13;
   ws.getColumn(8).width = 16;
+  ws.getColumn(9).width = 11; // 電子印鑑欄
 
   ws.getRow(1).height = 34;
+  for (let r = 3; r <= 6; r++) ws.getRow(r).height = 15; // 印鑑欄が概ね正方形(21mm角)になるよう高さを揃える
 
   // --- タイトル ---
   mergedCell(ws, "B1:H1", "請　求　書", { font: TITLE_FONT, align: CENTER, border: false });
@@ -133,6 +138,21 @@ export async function buildInvoiceXlsx(input: InvoiceXlsxInput): Promise<Buffer>
       align: RIGHT,
       border: false,
     });
+  }
+
+  // --- 電子印鑑欄(自社情報の脇、I3:I6を21mm角のスペースとして確保) ---
+  mergedCell(ws, "I3:I6", input.companySealImage ? null : "印", {
+    align: CENTER,
+    font: { ...FONT, size: 9, color: { argb: "FFAAAAAA" } },
+    border: true,
+  });
+  if (input.companySealImage) {
+    const imageId = wb.addImage({
+      buffer: input.companySealImage.buffer as unknown as ExcelJS.Buffer,
+      extension: input.companySealImage.extension,
+    });
+    // I3:I6のセル範囲いっぱいに配置する(枠は上で描画済みなので画像は枠内に重ねる想定)
+    ws.addImage(imageId, "I3:I6");
   }
 
   // --- 請求書番号・日付 ---
