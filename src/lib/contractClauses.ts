@@ -1,5 +1,26 @@
 export type ContractClause = { key: string; title: string; text: string };
 
+// この条項は工事内容・金額・工期・支払条件そのものであり、案件ごとに必ず内容が
+// 変わる(=過去契約からの使い回しをしてはいけない)条項のキー。
+export const ALWAYS_REGENERATE_CLAUSE_KEYS = new Set(["kouji_naiyou", "kingaku", "koki", "shiharai"]);
+
+/**
+ * 同じ顧客との過去契約(確定済み)がある場合に、条項を引き継ぐ。工事内容・金額・
+ * 工期・支払条件(ALWAYS_REGENERATE_CLAUSE_KEYS)は必ず新しい内容(freshClauses)を
+ * 使い、それ以外の条項は過去契約で編集された文面があればそちらを優先する
+ * (REQUIREMENTS.md「重要な契約条項をAIが勝手に削除・変更しない」
+ * 「今回変更が必要な情報だけを差し替える」方針)。
+ */
+export function mergeClausesWithPast(
+  freshClauses: ContractClause[],
+  pastClauses: ContractClause[] | null,
+  alwaysRegenerateKeys: Set<string> = ALWAYS_REGENERATE_CLAUSE_KEYS
+): ContractClause[] {
+  if (!pastClauses) return freshClauses;
+  const pastByKey = new Map(pastClauses.map((c) => [c.key, c]));
+  return freshClauses.map((c) => (alwaysRegenerateKeys.has(c.key) ? c : (pastByKey.get(c.key) ?? c)));
+}
+
 export type ContractClauseInput = {
   projectName: string;
   siteAddress: string | null;

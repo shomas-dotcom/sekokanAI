@@ -24,10 +24,13 @@ function toDateInputValue(value: Date | null): string {
 
 export default async function ContractDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ referencedContract?: string }>;
 }) {
   const { id } = await params;
+  const { referencedContract } = await searchParams;
   const user = await requireUser();
 
   const [contract, files] = await Promise.all([
@@ -81,6 +84,11 @@ export default async function ContractDetailPage({
             label: "基本情報",
             content: (
               <div className="flex flex-col gap-6">
+      {referencedContract && (
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800">
+          前回の契約({referencedContract})を元に作成しました。工事内容・契約金額・工期・支払方法(第1〜4条)は今回の案件の内容に更新済みです。それ以外の条項・特約事項は前回と同じ内容を引き継いでいるので、内容に問題ないか確認してください。
+        </div>
+      )}
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">
         本システムで作成される文書は一般的なひな形です。個別案件の内容、取引条件、法令および発注者指定条件に応じて、行政書士、弁護士、税理士等の専門家へ確認してください。
       </div>

@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { computeContractAmounts } from "@/lib/calc";
-import { buildDefaultClauses, type ContractClause } from "@/lib/contractClauses";
+import { buildDefaultClauses, mergeClausesWithPast, type ContractClause } from "@/lib/contractClauses";
 import { advanceProjectStatus } from "@/lib/projectStatus";
 import { computeQuoteTotals } from "../quotes/totals";
 
@@ -71,7 +71,7 @@ export async function createContractAction(
     taxRatePercent
   );
 
-  const clauses = buildDefaultClauses({
+  const freshClauses = buildDefaultClauses({
     projectName: project.name,
     siteAddress: project.siteAddress,
     overview: project.overview,
@@ -82,6 +82,23 @@ export async function createContractAction(
     endDate,
     paymentTerms,
   });
+
+  // 同じ顧客との直近の確定済み契約があれば、工事内容・金額・工期・支払条件の
+  // 4条項は必ず新しい内容で作り直しつつ、それ以外の条項(過去に編集済みかも
+  // しれない文面)と特約事項等はそのまま引き継ぐ。
+  const pastContract = await prisma.contract.findFirst({
+    where: {
+      companyId: user.companyId,
+      status: "CONFIRMED",
+      project: { customerId: project.customerId },
+    },
+    orderBy: { contractDate: "desc" },
+  });
+
+  const clauses = mergeClausesWithPast(
+    freshClauses,
+    pastContract ? (JSON.parse(pastContract.clausesJson) as ContractClause[]) : null
+  );
 
   const contractNumber = await nextDocumentNumber(user.companyId, "CONTRACT");
 
@@ -99,6 +116,10 @@ export async function createContractAction(
       startDate,
       endDate,
       paymentTerms,
+      warrantyTerms: pastContract?.warrantyTerms ?? null,
+      delayTerms: pastContract?.delayTerms ?? null,
+      cancellationTerms: pastContract?.cancellationTerms ?? null,
+      specialTerms: pastContract?.specialTerms ?? null,
       clausesJson: JSON.stringify(clauses),
     },
   });
@@ -112,7 +133,11 @@ export async function createContractAction(
   });
 
   revalidatePath("/contracts");
-  redirect(`/contracts/${contract.id}`);
+  redirect(
+    pastContract
+      ? `/contracts/${contract.id}?referencedContract=${encodeURIComponent(pastContract.contractNumber)}`
+      : `/contracts/${contract.id}`
+  );
 }
 
 export async function updateContractMetaAction(formData: FormData) {
