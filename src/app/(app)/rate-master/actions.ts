@@ -34,7 +34,20 @@ export async function createRateMasterItemAction(
   const data = readForm(formData);
   if (!data.name) return { error: "品目名は必須です。" };
 
-  const item = await prisma.rateMasterItem.create({ data: { ...data, companyId: user.companyId } });
+  const item = await prisma.$transaction(async (tx) => {
+    const created = await tx.rateMasterItem.create({ data: { ...data, companyId: user.companyId } });
+    // 登録時点の単価を最初の履歴として残す(単価履歴を「上書きではなく積み重ねる」方針のため)
+    await tx.rateMasterPriceHistory.create({
+      data: {
+        companyId: user.companyId,
+        rateMasterItemId: created.id,
+        unitPrice: created.unitPrice,
+        costPrice: created.costPrice,
+      },
+    });
+    return created;
+  });
+
   await logAction({
     companyId: user.companyId,
     userId: user.id,
@@ -56,11 +69,24 @@ export async function updateRateMasterItemAction(
   const data = readForm(formData);
   if (!data.name) return { error: "品目名は必須です。" };
 
-  const result = await prisma.rateMasterItem.updateMany({
-    where: { id, companyId: user.companyId },
-    data,
+  const existing = await prisma.rateMasterItem.findFirst({ where: { id, companyId: user.companyId } });
+  if (!existing) return { error: "単価マスタが見つかりません。" };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.rateMasterItem.update({ where: { id }, data });
+    // 単価(売単価・原価)が実際に変わった場合のみ履歴を積む(名称のみの修正等では
+    // 履歴を汚さない)
+    if (existing.unitPrice !== data.unitPrice || existing.costPrice !== data.costPrice) {
+      await tx.rateMasterPriceHistory.create({
+        data: {
+          companyId: user.companyId,
+          rateMasterItemId: id,
+          unitPrice: data.unitPrice,
+          costPrice: data.costPrice,
+        },
+      });
+    }
   });
-  if (result.count === 0) return { error: "単価マスタが見つかりません。" };
 
   await logAction({
     companyId: user.companyId,

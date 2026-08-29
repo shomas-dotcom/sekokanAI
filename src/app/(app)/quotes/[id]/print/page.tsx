@@ -41,6 +41,9 @@ export default async function QuotePrintPage({
         </div>
         <div className="text-right">
           <p>発行日: {today}</p>
+          {quote.expirationDate && (
+            <p>見積有効期限: {new Date(quote.expirationDate).toLocaleDateString("ja-JP")}</p>
+          )}
           <p className="mt-4 font-semibold">{quote.company.name}</p>
           {quote.company.address && <p>{quote.company.address}</p>}
           {quote.company.phone && <p>TEL: {quote.company.phone}</p>}

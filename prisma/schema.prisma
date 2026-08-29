@@ -86,6 +86,7 @@ model Company {
   kyActivities              KyActivity[]
   projectFiles              ProjectFile[]
   entityFiles               EntityFile[]
+  rateMasterPriceHistories  RateMasterPriceHistory[]
 }
 
 // Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
@@ -150,19 +151,43 @@ enum RateCategory {
 // 会社ごとの単価マスタ。AIは単価を勝手に確定させず、ここに登録された単価を
 // 優先して見積項目候補に反映する(REQUIREMENTS.md/CLAUDE.mdの原価集計ルール)。
 model RateMasterItem {
-  id        String       @id @default(cuid())
-  companyId String
-  company   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  category  RateCategory
-  name      String // 具体的な品目名(例: "0.25BHバックホウ(日極)")
-  unit      String // 単位(例: "日", "m3", "m", "式", "人日")
-  unitPrice Int // 売単価
-  costPrice Int? // 原価(粗利計算用。任意)
-  notes     String?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id           String                   @id @default(cuid())
+  companyId    String
+  company      Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category     RateCategory
+  name         String // 具体的な品目名(例: "0.25BHバックホウ(日極)")
+  unit         String // 単位(例: "日", "m3", "m", "式", "人日")
+  unitPrice    Int // 売単価
+  costPrice    Int? // 原価(粗利計算用。任意)
+  notes        String?
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  priceHistory RateMasterPriceHistory[]
+  quoteItems   QuoteItem[]
 
   @@index([companyId])
+}
+
+// 単価履歴。単価マスタの単価を上書きするのではなく、変更のたびにここへ記録を
+// 積み重ねる(REQUIREMENTS.mdの「残土処分 2026/01 8,000円→2026/05 8,500円→…」
+// という例と同じ考え方)。過去の見積書から読み取った単価はsourceQuoteId・
+// effectiveDate(その見積の作成日)を設定して記録する想定。
+model RateMasterPriceHistory {
+  id               String         @id @default(cuid())
+  companyId        String
+  company          Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  rateMasterItemId String
+  rateMasterItem   RateMasterItem @relation(fields: [rateMasterItemId], references: [id], onDelete: Cascade)
+  unitPrice        Int
+  costPrice        Int?
+  effectiveDate    DateTime       @default(now()) // この単価が有効になった日(過去見積由来ならその見積の作成日)
+  sourceQuoteId    String? // どの見積由来かの参照(手動更新の場合はnull)
+  sourceQuote      Quote?         @relation(fields: [sourceQuoteId], references: [id], onDelete: SetNull)
+  note             String?
+  createdAt        DateTime       @default(now())
+
+  @@index([companyId])
+  @@index([rateMasterItemId])
 }
 
 enum EmploymentType {
@@ -458,6 +483,7 @@ model Quote {
   updatedAt        DateTime    @updatedAt
   items            QuoteItem[]
   contracts        Contract[]
+  priceHistoryRefs RateMasterPriceHistory[]
 
   @@index([companyId])
   @@index([projectId])
@@ -473,22 +499,24 @@ enum PriceSource {
 }
 
 model QuoteItem {
-  id           String        @id @default(cuid())
-  quoteId      String
-  quote        Quote         @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  sortOrder    Int           @default(0)
-  itemName     String
-  spec         String? // 規格
-  quantity     Float
-  unit         String
-  unitPrice    Int
-  priceSource  PriceSource   @default(MANUAL)
-  costPrice    Int? // 原価
-  costCategory RateCategory? // 原価の区分(材料費/労務費/重機費/外注費/処分費/その他原価の集計に使う)
-  laborUnits   Float? // 人工
-  machinery    String?
-  materials    String?
-  remarks      String?
+  id               String          @id @default(cuid())
+  quoteId          String
+  quote            Quote           @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  sortOrder        Int             @default(0)
+  itemName         String
+  spec             String? // 規格
+  quantity         Float
+  unit             String
+  unitPrice        Int
+  priceSource      PriceSource     @default(MANUAL)
+  costPrice        Int? // 原価
+  costCategory     RateCategory? // 原価の区分(材料費/労務費/重機費/外注費/処分費/その他原価の集計に使う)
+  laborUnits       Float? // 人工
+  machinery        String?
+  materials        String?
+  remarks          String?
+  rateMasterItemId String? // 単価マスタのどの品目を参照したか(価格変動アドバイス表示等に使う)
+  rateMasterItem   RateMasterItem? @relation(fields: [rateMasterItemId], references: [id], onDelete: SetNull)
 
   @@index([quoteId])
 }

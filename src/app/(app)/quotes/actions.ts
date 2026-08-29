@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { draftQuoteItemsFromText } from "@/lib/ai";
 import { advanceProjectStatus } from "@/lib/projectStatus";
+import { defaultQuoteExpirationDate } from "@/lib/rateMaster";
 import type { PriceSource, RateCategory } from "@/generated/prisma/enums";
 
 const RATE_CATEGORIES: RateCategory[] = [
@@ -62,6 +63,8 @@ export async function createQuoteAction(
       companyId: user.companyId,
       projectId,
       title,
+      // 資材・燃料費等は変動があるため既定3ヶ月(利用者が画面から自由に変更できる)
+      expirationDate: defaultQuoteExpirationDate(),
       items: {
         create: draftItems.map((item, index) => ({
           sortOrder: index,
@@ -78,6 +81,7 @@ export async function createQuoteAction(
           remarks: item.matchedRateItemId
             ? "単価マスタから自動反映(要確認)"
             : "単価不明(要確認・単価マスタに未登録)",
+          rateMasterItemId: item.matchedRateItemId,
         })),
       },
     },
@@ -103,6 +107,8 @@ export async function updateQuoteMetaAction(formData: FormData) {
   const taxRatePercent = Number(formData.get("taxRatePercent") ?? 10);
   const discountAmount = Number(formData.get("discountAmount") ?? 0);
   const notes = String(formData.get("notes") ?? "").trim() || null;
+  const expirationDateStr = String(formData.get("expirationDate") ?? "").trim();
+  const expirationDate = expirationDateStr ? new Date(expirationDateStr) : null;
 
   // 見積名が空の場合は変更を保存せず詳細ページへ戻す(HTML側のrequired属性が主な防止策)
   if (!title) redirect(`/quotes/${id}`);
@@ -115,6 +121,7 @@ export async function updateQuoteMetaAction(formData: FormData) {
       taxRatePercent: Number.isFinite(taxRatePercent) ? taxRatePercent : 10,
       discountAmount: Number.isFinite(discountAmount) ? discountAmount : 0,
       notes,
+      expirationDate,
     },
   });
   if (result.count === 0) redirect("/quotes");
@@ -174,6 +181,8 @@ export async function duplicateQuoteAction(formData: FormData) {
       discountAmount: source.discountAmount,
       notes: source.notes,
       duplicatedFromId: source.id,
+      // 複製は新しい見積として扱うため、有効期限も今日から数えて既定値に更新する
+      expirationDate: defaultQuoteExpirationDate(),
       items: {
         create: source.items.map((item, index) => ({
           sortOrder: index,
@@ -189,6 +198,7 @@ export async function duplicateQuoteAction(formData: FormData) {
           machinery: item.machinery,
           materials: item.materials,
           remarks: item.remarks,
+          rateMasterItemId: item.rateMasterItemId,
         })),
       },
     },

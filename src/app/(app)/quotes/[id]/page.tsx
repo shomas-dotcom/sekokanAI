@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { computeQuoteTotals, computeQuoteProfitability, COST_BUCKET_LABEL } from "../totals";
 import { PRICE_SOURCE_LABEL, QUOTE_STATUS_LABEL } from "../priceSourceLabel";
-import { RATE_CATEGORY_LABEL } from "@/lib/rateMaster";
+import { RATE_CATEGORY_LABEL, isRateStale } from "@/lib/rateMaster";
 import {
   updateQuoteMetaAction,
   deleteQuoteAction,
@@ -37,7 +37,10 @@ export default async function QuoteDetailPage({
       where: { id, companyId: user.companyId },
       include: {
         project: { include: { customer: true } },
-        items: { orderBy: { sortOrder: "asc" } },
+        items: {
+          orderBy: { sortOrder: "asc" },
+          include: { rateMasterItem: { select: { name: true, updatedAt: true } } },
+        },
       },
     }),
     prisma.entityFile.findMany({
@@ -54,6 +57,16 @@ export default async function QuoteDetailPage({
     targetRate != null &&
     profitability.grossProfitRate != null &&
     profitability.grossProfitRate < targetRate;
+
+  // 資材・燃料費等は価格変動があるため、単価マスタの更新から3ヶ月以上経っている
+  // 品目があれば、見積確定前に確認するよう案内する(REQUIREMENTS.md「価格高騰アドバイス」)。
+  const staleRateItemNames = Array.from(
+    new Set(
+      quote.items
+        .filter((i) => i.rateMasterItem && isRateStale(i.rateMasterItem.updatedAt))
+        .map((i) => i.rateMasterItem!.name)
+    )
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -80,7 +93,19 @@ export default async function QuoteDetailPage({
 
       <Tabs
         tabs={[
-          { label: "基本情報", content: <QuoteBasicInfo quote={quote} totals={totals} profitability={profitability} belowTarget={belowTarget} targetRate={targetRate} /> },
+          {
+            label: "基本情報",
+            content: (
+              <QuoteBasicInfo
+                quote={quote}
+                totals={totals}
+                profitability={profitability}
+                belowTarget={belowTarget}
+                targetRate={targetRate}
+                staleRateItemNames={staleRateItemNames}
+              />
+            ),
+          },
           {
             label: "ファイル参照",
             content: <EntityFileSection entityType="QUOTE" entityId={quote.id} files={files} />,
@@ -104,12 +129,19 @@ type QuoteBasicInfoItem = {
   remarks: string | null;
 };
 
+function toDateInputValue(value: Date | null): string {
+  if (!value) return "";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+}
+
 function QuoteBasicInfo({
   quote,
   totals,
   profitability,
   belowTarget,
   targetRate,
+  staleRateItemNames,
 }: {
   quote: {
     id: string;
@@ -118,15 +150,26 @@ function QuoteBasicInfo({
     taxRatePercent: number;
     discountAmount: number;
     notes: string | null;
+    expirationDate: Date | null;
     items: QuoteBasicInfoItem[];
   };
   totals: ReturnType<typeof computeQuoteTotals>;
   profitability: ReturnType<typeof computeQuoteProfitability>;
   belowTarget: boolean;
   targetRate: number | null;
+  staleRateItemNames: string[];
 }) {
   return (
     <div className="flex flex-col gap-6">
+      {staleRateItemNames.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="font-semibold">⚠ 価格変動リスクの確認をおすすめします</p>
+          <p className="mt-1 text-xs">
+            次の単価は単価マスタで3ヶ月以上更新されていません: {staleRateItemNames.join("、")}
+            。生コン・残土処分費・燃料費等は価格変動があるため、最新の単価を確認してから見積を確定してください。
+          </p>
+        </div>
+      )}
       {/* 明細 */}
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/50">
         <table className="w-full min-w-[900px] text-left text-sm">
@@ -391,6 +434,18 @@ function QuoteBasicInfo({
               defaultValue={quote.discountAmount}
               className={inputClass}
             />
+          </label>
+          <label className="flex flex-col gap-1 text-sm text-slate-700">
+            見積有効期限
+            <input
+              name="expirationDate"
+              type="date"
+              defaultValue={toDateInputValue(quote.expirationDate)}
+              className={inputClass}
+            />
+            <span className="text-xs text-slate-400">
+              資材価格の変動を踏まえ既定で3ヶ月にしていますが、自由に変更できます。
+            </span>
           </label>
           <label className="flex flex-col gap-1 text-sm text-slate-700 sm:col-span-2">
             備考

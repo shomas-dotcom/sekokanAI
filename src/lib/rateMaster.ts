@@ -51,3 +51,24 @@ export function costBucketForCategory(category: RateCategory | null | undefined)
   if (!category) return "OTHER";
   return CATEGORY_TO_BUCKET[category];
 }
+
+// 単価の更新が古くなっていないかの判定基準。生コン・残土処分費・燃料費等は価格変動が
+// あるため、3ヶ月を目安に「そろそろ確認を」と促す(REQUIREMENTS.mdの
+// 「3ヶ月以上更新されていない単価には注意表示」の基準として一元管理する)。
+export const RATE_STALE_MONTHS = 3;
+
+export function isRateStale(lastUpdatedAt: Date, now: Date = new Date()): boolean {
+  const staleThreshold = new Date(lastUpdatedAt);
+  staleThreshold.setMonth(staleThreshold.getMonth() + RATE_STALE_MONTHS);
+  return staleThreshold < now;
+}
+
+// 見積の標準有効期限。資材・燃料費等の価格変動リスクを踏まえ3ヶ月を既定値とするが、
+// 利用者が画面上で自由に変更できる(REQUIREMENTS.mdの方針通り、AIが最終確定はしない)。
+export const DEFAULT_QUOTE_VALIDITY_MONTHS = 3;
+
+export function defaultQuoteExpirationDate(from: Date = new Date()): Date {
+  const d = new Date(from);
+  d.setMonth(d.getMonth() + DEFAULT_QUOTE_VALIDITY_MONTHS);
+  return d;
+}

@@ -2,14 +2,24 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Button, Card } from "@/components/ui";
-import { RATE_CATEGORY_LABEL } from "@/lib/rateMaster";
+import { RATE_CATEGORY_LABEL, isRateStale } from "@/lib/rateMaster";
 
 export default async function RateMasterPage() {
   const user = await requireUser();
-  const items = await prisma.rateMasterItem.findMany({
-    where: { companyId: user.companyId },
-    orderBy: [{ category: "asc" }, { name: "asc" }],
-  });
+  const [items, latestHistory] = await Promise.all([
+    prisma.rateMasterItem.findMany({
+      where: { companyId: user.companyId },
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+    }),
+    prisma.rateMasterPriceHistory.groupBy({
+      by: ["rateMasterItemId"],
+      where: { companyId: user.companyId },
+      _max: { effectiveDate: true },
+    }),
+  ]);
+  const latestPriceDateByItemId = new Map(
+    latestHistory.map((h) => [h.rateMasterItemId, h._max.effectiveDate])
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -39,24 +49,35 @@ export default async function RateMasterPage() {
                 <th className="px-4 py-3 font-medium">単位</th>
                 <th className="px-4 py-3 font-medium">売単価</th>
                 <th className="px-4 py-3 font-medium">原価</th>
+                <th className="px-4 py-3 font-medium">最終更新</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
-                  <td className="px-4 py-3 text-slate-600">{RATE_CATEGORY_LABEL[item.category]}</td>
-                  <td className="px-4 py-3">
-                    <Link href={`/rate-master/${item.id}`} className="font-medium text-orange-700 underline">
-                      {item.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{item.unit}</td>
-                  <td className="px-4 py-3 text-slate-900">{item.unitPrice.toLocaleString("ja-JP")}円</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {item.costPrice != null ? `${item.costPrice.toLocaleString("ja-JP")}円` : "—"}
-                  </td>
-                </tr>
-              ))}
+              {items.map((item) => {
+                const lastPriceDate = latestPriceDateByItemId.get(item.id) ?? item.updatedAt;
+                const stale = isRateStale(lastPriceDate);
+                return (
+                  <tr key={item.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                    <td className="px-4 py-3 text-slate-600">{RATE_CATEGORY_LABEL[item.category]}</td>
+                    <td className="px-4 py-3">
+                      <Link href={`/rate-master/${item.id}`} className="font-medium text-orange-700 underline">
+                        {item.name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{item.unit}</td>
+                    <td className="px-4 py-3 text-slate-900">{item.unitPrice.toLocaleString("ja-JP")}円</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {item.costPrice != null ? `${item.costPrice.toLocaleString("ja-JP")}円` : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={stale ? "text-amber-700" : "text-slate-500"}>
+                        {stale && "⚠ "}
+                        {lastPriceDate.toLocaleDateString("ja-JP")}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </Card>
