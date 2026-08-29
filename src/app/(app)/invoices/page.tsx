@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUS_COLOR } from "./statusLabel";
+import { computeInvoicePaymentStatus, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_COLOR } from "@/lib/invoicePaymentStatus";
 import { Button, Badge } from "@/components/ui";
 
 export default async function InvoicesPage() {
@@ -27,31 +28,41 @@ export default async function InvoicesPage() {
         </p>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {invoices.map((inv) => (
-            <Link
-              key={inv.id}
-              href={`/invoices/${inv.id}`}
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50 transition hover:-translate-y-0.5 hover:shadow-md"
-            >
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-slate-900">{inv.invoiceNumber}</p>
-                <Badge className={INVOICE_STATUS_COLOR[inv.status]}>
-                  {INVOICE_STATUS_LABEL[inv.status]}
-                </Badge>
-              </div>
-              <p className="mt-1 text-sm text-slate-500">
-                {inv.project.customer.name} / {inv.project.name}
-              </p>
-              {inv.dueDate && (
-                <p className="mt-1 text-xs text-slate-400">
-                  支払期限: {new Date(inv.dueDate).toLocaleDateString("ja-JP")}
+          {invoices.map((inv) => {
+            const paymentStatus = computeInvoicePaymentStatus(inv);
+            return (
+              <Link
+                key={inv.id}
+                href={`/invoices/${inv.id}`}
+                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50 transition hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold text-slate-900">{inv.invoiceNumber}</p>
+                  <div className="flex items-center gap-1.5">
+                    {paymentStatus && (
+                      <Badge className={PAYMENT_STATUS_COLOR[paymentStatus]}>
+                        {PAYMENT_STATUS_LABEL[paymentStatus]}
+                      </Badge>
+                    )}
+                    <Badge className={INVOICE_STATUS_COLOR[inv.status]}>
+                      {INVOICE_STATUS_LABEL[inv.status]}
+                    </Badge>
+                  </div>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {inv.project.customer.name} / {inv.project.name}
                 </p>
-              )}
-              <p className="mt-2 text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-600 to-orange-600">
-                {inv.total.toLocaleString("ja-JP")}円
-              </p>
-            </Link>
-          ))}
+                {inv.dueDate && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    支払期限: {new Date(inv.dueDate).toLocaleDateString("ja-JP")}
+                  </p>
+                )}
+                <p className="mt-2 text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-600 to-orange-600">
+                  {inv.total.toLocaleString("ja-JP")}円
+                </p>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

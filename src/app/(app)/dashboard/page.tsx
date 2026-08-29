@@ -74,6 +74,14 @@ export default async function DashboardPage() {
       orderBy: { expiresAt: "asc" },
     }),
   ]);
+
+  // 支払期限を過ぎても未入金(ISSUED)の請求書を「入金確認が必要」として警告する
+  const overdueInvoices = await prisma.invoice.findMany({
+    where: { companyId, status: "ISSUED", dueDate: { lt: now } },
+    include: { project: { include: { customer: true } } },
+    orderBy: { dueDate: "asc" },
+    take: 10,
+  });
   const soonOrExpiredQualifications = expiringQualifications.filter(
     (q) => isExpired(q.expiresAt) || isExpiringSoon(q.expiresAt)
   );
@@ -185,6 +193,23 @@ export default async function DashboardPage() {
           <p className="mt-1 text-3xl font-bold text-slate-900">{monthlyOvertimeHours}時間</p>
         </Card>
       </div>
+
+      {overdueInvoices.length > 0 && (
+        <Card className="border-rose-200 bg-rose-50">
+          <h2 className="font-semibold text-rose-800">⚠ 入金確認が必要です(支払期限超過)</h2>
+          <ul className="mt-2 flex flex-col gap-1 text-sm text-rose-800">
+            {overdueInvoices.map((inv) => (
+              <li key={inv.id}>
+                <Link href={`/invoices/${inv.id}`} className="underline">
+                  {inv.invoiceNumber}
+                </Link>
+                : {inv.project.customer.name} / {inv.total.toLocaleString("ja-JP")}円(期限{" "}
+                {inv.dueDate?.toLocaleDateString("ja-JP")})
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {soonOrExpiredQualifications.length > 0 && (
         <Card className="border-amber-200 bg-amber-50">
