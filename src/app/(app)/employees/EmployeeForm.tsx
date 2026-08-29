@@ -34,16 +34,34 @@ export function EmployeeForm({
   action,
   employee,
   submitLabel,
+  pendingQualification,
 }: {
   action: (state: EmployeeFormState, formData: FormData) => Promise<EmployeeFormState>;
   employee?: Employee;
   submitLabel: string;
+  /** 身分証読み取りで取得した免許情報。登録と同時に保有資格として作成する(新規登録時のみ)。 */
+  pendingQualification?: { name: string; expiresAt: string | null };
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
       {employee && <input type="hidden" name="id" value={employee.id} />}
+      {pendingQualification && (
+        <>
+          <input type="hidden" name="initialQualificationName" value={pendingQualification.name} />
+          <input
+            type="hidden"
+            name="initialQualificationExpiresAt"
+            value={pendingQualification.expiresAt ?? ""}
+          />
+          <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+            登録と同時に保有資格「{pendingQualification.name}」
+            {pendingQualification.expiresAt && `(有効期限: ${pendingQualification.expiresAt})`}
+            を追加します。
+          </p>
+        </>
+      )}
 
       <FieldLabel label="氏名" required>
         <Input name="name" required defaultValue={employee?.name} />

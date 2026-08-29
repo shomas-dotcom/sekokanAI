@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/numbering";
-import { validateProjectRequestFile } from "@/lib/fileValidation";
+import { validateAiDocumentFile } from "@/lib/fileValidation";
 import {
   extractProjectRequestFromText,
   extractProjectRequestFromImage,
@@ -215,7 +215,7 @@ export async function scanProjectRequestAction(
   let extraction: ProjectRequestExtraction;
 
   if (file instanceof File && file.size > 0) {
-    const validationError = validateProjectRequestFile(file);
+    const validationError = validateAiDocumentFile(file);
     if (validationError) return { error: validationError };
 
     const buffer = Buffer.from(await file.arrayBuffer());

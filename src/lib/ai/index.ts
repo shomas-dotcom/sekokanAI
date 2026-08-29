@@ -1018,3 +1018,86 @@ function mockExtractProjectRequest(rawText: string): ProjectRequestExtraction {
   };
   return finalizeProjectRequestExtraction(fields);
 }
+
+// --- 身分証からの従業員自動登録(2026-08-29追記) -----------------------------
+//
+// 運転免許証・マイナンバーカード等を読み取る。画像そのものは呼び出し側で保存
+// しない前提(REQUIREMENTS.mdの「必要以上の個人情報を保存しない」方針)。
+// 生年月日・住所・免許証番号は確認画面に一度だけ表示する目的の情報であり、
+// DBへの恒久保存は行わない(氏名・フリガナと、免許の種類・有効期限だけを
+// 既存の「保有資格」として登録する。これにより新たな個人情報用カラムを
+// 増やさずに済む)。名刺OCRと同様、これも文字抽出そのものにAIが必要なため
+// モックでの代替はできない。
+
+export type IdCardExtraction = {
+  name: string | null;
+  nameKana: string | null;
+  dateOfBirth: string | null; // 確認画面表示のみ。DBには保存しない
+  address: string | null; // 確認画面表示のみ。DBには保存しない
+  licenseNumber: string | null; // 確認画面表示のみ。DBには保存しない
+  licenseType: string | null; // 保有資格として登録する(例: "普通自動車第一種運転免許")
+  licenseExpiry: string | null; // 保有資格の有効期限として登録する(YYYY-MM-DD)
+  confidence: "high" | "needs_review" | "unavailable";
+};
+
+const ID_CARD_SYSTEM = `あなたは建設会社の事務担当者を補助するアシスタントです。
+渡された身分証(運転免許証・マイナンバーカード等)の画像から情報を読み取ってください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"name": string|null, "nameKana": string|null, "dateOfBirth": string|null, "address": string|null, "licenseNumber": string|null, "licenseType": string|null, "licenseExpiry": string|null}
+日付は西暦のYYYY-MM-DD形式にしてください(和暦が書かれている場合は西暦に変換してください)。
+最も重要な注意: 記載されていない/読み取れない項目は、絶対に推測で埋めずnullにしてください。`;
+
+function parseIdCardJson(raw: string): Omit<IdCardExtraction, "confidence"> {
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+  const s = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  return {
+    name: s(parsed.name),
+    nameKana: s(parsed.nameKana),
+    dateOfBirth: s(parsed.dateOfBirth),
+    address: s(parsed.address),
+    licenseNumber: s(parsed.licenseNumber),
+    licenseType: s(parsed.licenseType),
+    licenseExpiry: s(parsed.licenseExpiry),
+  };
+}
+
+const UNAVAILABLE_ID_CARD: IdCardExtraction = {
+  name: null,
+  nameKana: null,
+  dateOfBirth: null,
+  address: null,
+  licenseNumber: null,
+  licenseType: null,
+  licenseExpiry: null,
+  confidence: "unavailable",
+};
+
+function finalizeIdCardExtraction(fields: Omit<IdCardExtraction, "confidence">): IdCardExtraction {
+  return { ...fields, confidence: fields.name ? "high" : "needs_review" };
+}
+
+export async function extractIdCardFromImage(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp"
+): Promise<IdCardExtraction> {
+  if (isMockMode()) return UNAVAILABLE_ID_CARD;
+  try {
+    const raw = await callAnthropicVision(ID_CARD_SYSTEM, base64Image, mediaType, "この身分証を読み取ってください。");
+    return finalizeIdCardExtraction(parseIdCardJson(raw));
+  } catch (err) {
+    console.error("[ai] extractIdCardFromImage: failed", err);
+    return UNAVAILABLE_ID_CARD;
+  }
+}
+
+export async function extractIdCardFromPdf(base64Pdf: string): Promise<IdCardExtraction> {
+  if (isMockMode()) return UNAVAILABLE_ID_CARD;
+  try {
+    const raw = await callAnthropicDocument(ID_CARD_SYSTEM, base64Pdf, "この身分証を読み取ってください。");
+    return finalizeIdCardExtraction(parseIdCardJson(raw));
+  } catch (err) {
+    console.error("[ai] extractIdCardFromPdf: failed", err);
+    return UNAVAILABLE_ID_CARD;
+  }
+}

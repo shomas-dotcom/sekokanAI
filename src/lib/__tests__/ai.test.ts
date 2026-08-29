@@ -9,6 +9,7 @@ import {
   extractEmployeeFieldsFromText,
   extractProjectRequestFromText,
   extractProjectRequestFromImage,
+  extractIdCardFromImage,
 } from "@/lib/ai";
 
 function mockAnthropicResponse(text: string, ok = true) {
@@ -211,6 +212,13 @@ describe("AI関数の異常系入力(空文字・記号のみ等でも例外を�
     const result = await extractProjectRequestFromImage("dGVzdA==", "image/jpeg");
     expect(result.confidence).toBe("unavailable");
     expect(result.projectName).toBeNull();
+  });
+
+  it("extractIdCardFromImageはAI未設定時、それらしい偽データを作らずunavailableを返す", async () => {
+    const result = await extractIdCardFromImage("dGVzdA==", "image/jpeg");
+    expect(result.confidence).toBe("unavailable");
+    expect(result.name).toBeNull();
+    expect(result.dateOfBirth).toBeNull();
   });
 });
 
