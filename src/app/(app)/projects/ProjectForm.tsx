@@ -24,6 +24,12 @@ type Project = {
   taxRatePercent?: number;
   paymentTerms?: string | null;
   overview?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  castingDate?: Date | string | null;
+  suppliedItems?: string | null;
+  soilQuantity?: string | null;
+  cautions?: string | null;
 };
 
 function toDateInputValue(value?: Date | string | null): string {
@@ -84,8 +90,30 @@ export function ProjectForm({
         </FieldLabel>
       </div>
 
-      <FieldLabel label="工事概要">
-        <Textarea name="overview" rows={2} defaultValue={project?.overview ?? ""} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <FieldLabel label="発注者側の担当者">
+          <Input name="contactName" defaultValue={project?.contactName ?? ""} />
+        </FieldLabel>
+        <FieldLabel label="発注者側の電話番号">
+          <Input name="contactPhone" defaultValue={project?.contactPhone ?? ""} />
+        </FieldLabel>
+      </div>
+
+      <FieldLabel label="工事概要(工事内容・数量等)">
+        <Textarea name="overview" rows={3} defaultValue={project?.overview ?? ""} />
+      </FieldLabel>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <FieldLabel label="支給品(任意)">
+          <Input name="suppliedItems" defaultValue={project?.suppliedItems ?? ""} />
+        </FieldLabel>
+        <FieldLabel label="残土数量(任意)">
+          <Input name="soilQuantity" defaultValue={project?.soilQuantity ?? ""} placeholder="例: 10m3" />
+        </FieldLabel>
+      </div>
+
+      <FieldLabel label="注意事項(任意)">
+        <Textarea name="cautions" rows={2} defaultValue={project?.cautions ?? ""} />
       </FieldLabel>
 
       <div className="grid grid-cols-2 gap-4">
@@ -96,6 +124,10 @@ export function ProjectForm({
           <Input type="date" name="endDate" defaultValue={toDateInputValue(project?.endDate)} />
         </FieldLabel>
       </div>
+
+      <FieldLabel label="打設日(任意)">
+        <Input type="date" name="castingDate" defaultValue={toDateInputValue(project?.castingDate)} />
+      </FieldLabel>
 
       <div className="grid grid-cols-2 gap-4">
         <FieldLabel label="契約金額(税抜・目安)">

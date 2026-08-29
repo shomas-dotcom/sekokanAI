@@ -363,6 +363,12 @@ model Project {
   taxRatePercent             Int                @default(10)
   paymentTerms               String? // 支払条件(例: 月末締め翌月末払い)
   overview                   String? // 工事概要
+  contactName                String? // 発注者側の担当者名(案件依頼AI解析で使用)
+  contactPhone               String? // 発注者側の連絡先電話番号(案件依頼AI解析で使用)
+  castingDate                DateTime? // 打設日(案件依頼AI解析で使用。無ければ未設定)
+  suppliedItems              String? // 支給品(発注者から支給される資材等)
+  soilQuantity               String? // 残土数量(例: "10m3"。単位まで含めた表記のまま保持する)
+  cautions                   String? // 注意事項
   createdAt                  DateTime           @default(now())
   updatedAt                  DateTime           @updatedAt
   quotes                     Quote[]

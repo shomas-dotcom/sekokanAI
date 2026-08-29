@@ -59,3 +59,21 @@ export function validateVisionImageFile(file: { type: string; size: number }): s
   }
   return null;
 }
+
+// 案件依頼のAI解析用(画像またはPDF)。Excel/Wordは現時点でAI解析に対応していない
+// (テキストでの貼り付け・PDF・画像・音声で代替する)。
+export const ALLOWED_REQUEST_ANALYSIS_MIME_TYPES = [...ALLOWED_VISION_IMAGE_MIME_TYPES, "application/pdf"];
+export const MAX_REQUEST_ANALYSIS_BYTES = 15 * 1024 * 1024; // 15MB
+
+export function validateProjectRequestFile(file: { type: string; size: number }): string | null {
+  if (!ALLOWED_REQUEST_ANALYSIS_MIME_TYPES.includes(file.type)) {
+    return "この形式は読み取れません(JPEG・PNG・PDFのいずれかを選択してください。Excel・Wordは今のところ非対応です。テキストとしてコピー&ペーストしてください)。";
+  }
+  if (file.size <= 0) {
+    return "ファイルが空です。";
+  }
+  if (file.size > MAX_REQUEST_ANALYSIS_BYTES) {
+    return "ファイルサイズが大きすぎます(15MBまで)。";
+  }
+  return null;
+}

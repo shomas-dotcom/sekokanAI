@@ -7,6 +7,8 @@ import {
   extractBusinessCardFromImage,
   extractCustomerFieldsFromText,
   extractEmployeeFieldsFromText,
+  extractProjectRequestFromText,
+  extractProjectRequestFromImage,
 } from "@/lib/ai";
 
 function mockAnthropicResponse(text: string, ok = true) {
@@ -178,6 +180,23 @@ describe("AI関数の異常系入力(空文字・記号のみ等でも例外を�
   it("extractEmployeeFieldsFromTextはAI未設定でも電話番号を正規表現で拾える", async () => {
     const result = await extractEmployeeFieldsFromText("氏名は田中太郎。電話は090-1111-2222。");
     expect(result.phone).toBe("090-1111-2222");
+  });
+
+  it("extractProjectRequestFromTextはAI未設定でも原文を工事内容の手がかりとして残し、断定できない項目はunclearFieldsに積む", async () => {
+    const text = "所沢市泉町\n土間コン30㎡\n残土10m3\n工期9月1日〜9月30日";
+    const result = await extractProjectRequestFromText(text);
+    expect(result.workContent).toContain("土間コン");
+    expect(result.periodText).toBe("9月1日〜9月30日");
+    expect(result.soilQuantity).toBe("10m3");
+    // 案件名はモックでは断定せず、常に確認候補にする
+    expect(result.projectName).toBeNull();
+    expect(result.unclearFields).toContain("案件名");
+  });
+
+  it("extractProjectRequestFromImageはAI未設定時、それらしい偽データを作らずunavailableを返す", async () => {
+    const result = await extractProjectRequestFromImage("dGVzdA==", "image/jpeg");
+    expect(result.confidence).toBe("unavailable");
+    expect(result.projectName).toBeNull();
   });
 });
 

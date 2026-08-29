@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ProjectForm } from "../ProjectForm";
-import { createProjectAction } from "../actions";
-import { Card } from "@/components/ui";
+import { NewProjectPageClient } from "./NewProjectPageClient";
 
 export default async function NewProjectPage() {
   const user = await requireUser();
@@ -25,9 +23,7 @@ export default async function NewProjectPage() {
           してください。
         </p>
       ) : (
-        <Card className="max-w-lg">
-          <ProjectForm action={createProjectAction} customers={customers} submitLabel="登録する" />
-        </Card>
+        <NewProjectPageClient customers={customers} />
       )}
     </div>
   );

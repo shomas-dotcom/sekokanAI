@@ -109,6 +109,48 @@ async function callAnthropicVision(
   return text;
 }
 
+// PDFを直接読ませる呼び出し。Anthropic Messages APIはPDFをdocumentタイプの
+// contentブロックとしてbase64で渡すとテキスト抽出/OCR込みで内容を理解できるため、
+// 別途PDF解析ライブラリを追加する必要がない(依存を増やさない方針を維持できる)。
+async function callAnthropicDocument(system: string, base64Pdf: string, userText: string): Promise<string> {
+  const apiKey = process.env.AI_API_KEY;
+  if (!apiKey) throw new Error("AI_API_KEY is not set");
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 1024,
+      temperature: 0.2,
+      system,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Pdf } },
+            { type: "text", text: userText },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Anthropic API error: ${response.status} ${body.slice(0, 200)}`);
+  }
+
+  const data = (await response.json()) as { content?: { text?: string }[] };
+  const text = data.content?.[0]?.text;
+  if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
+  return text;
+}
+
 /** Claudeが```json``` で囲んで返すことがあるため取り除いてからJSONとして解釈する。 */
 function extractJson<T>(raw: string): T | null {
   const cleaned = raw.replace(/```json\s*|```\s*$/g, "").trim();
@@ -791,4 +833,176 @@ async function aiExtractEmployeeFields(text: string): Promise<EmployeeFieldExtra
     notes: null,
   };
   return { ...fields, confidence: fields.name ? "high" : "needs_review" };
+}
+
+// --- 案件依頼のAI自動解析(2026-08-28追記) ---------------------------------
+//
+// 元請会社等からの見積依頼(文章・画像・PDF)を読み取り、案件登録欄への仮入力を
+// 作る。読み取れなかった項目はunclearFieldsに積み、勝手に埋めない
+// (REQUIREMENTS.mdの一貫した方針)。年が書かれていない日付はAIに無理な推測を
+// させず、periodTextにそのまま残すよう指示する。
+
+export type ProjectRequestExtraction = {
+  projectName: string | null;
+  customerName: string | null; // 顧客名(会社名)。既存顧客との突き合わせは呼び出し側で行う
+  primeContractorName: string | null; // 元請会社
+  siteAddress: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  periodText: string | null; // 工期の原文表記(年が不明な場合もそのまま残す)
+  startDate: string | null; // YYYY-MM-DD。年まで確定できた場合のみ
+  endDate: string | null;
+  castingDate: string | null; // 打設日
+  workContent: string | null;
+  quantity: string | null;
+  suppliedItems: string | null;
+  soilQuantity: string | null;
+  cautions: string | null;
+  unclearFields: string[];
+  confidence: "high" | "needs_review" | "unavailable";
+};
+
+const PROJECT_REQUEST_FIELD_LABEL: Record<string, string> = {
+  projectName: "案件名",
+  customerName: "顧客名",
+  siteAddress: "現場住所",
+  workContent: "工事内容",
+};
+
+const PROJECT_REQUEST_SYSTEM = `あなたは建設会社の事務担当者を補助するアシスタントです。
+元請会社等から届いた見積依頼・工事依頼の内容(文章または画像)から、案件登録に使う情報を読み取ってください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"projectName": string|null, "customerName": string|null, "primeContractorName": string|null, "siteAddress": string|null, "contactName": string|null, "contactPhone": string|null, "periodText": string|null, "startDate": string|null, "endDate": string|null, "castingDate": string|null, "workContent": string|null, "quantity": string|null, "suppliedItems": string|null, "soilQuantity": string|null, "cautions": string|null}
+最も重要な注意:
+- 文中(画像内)に明記されていない項目は、絶対に推測で埋めずnullにしてください。
+- startDate/endDate/castingDateは西暦のYYYY-MM-DD形式にしてください。年が書かれておらず
+  西暦を確定できない場合は、これらをnullのままにし、periodTextに原文の日付表記
+  (例:「9月5日」)をそのまま残してください(年を勝手に補完しないこと)。
+- quantityには単位を含めた原文表記をそのまま入れてください(例:「土間コン30㎡、残土10m3」)。`;
+
+function parseProjectRequestJson(raw: string): Omit<ProjectRequestExtraction, "confidence" | "unclearFields"> {
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+  const s = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  return {
+    projectName: s(parsed.projectName),
+    customerName: s(parsed.customerName),
+    primeContractorName: s(parsed.primeContractorName),
+    siteAddress: s(parsed.siteAddress),
+    contactName: s(parsed.contactName),
+    contactPhone: s(parsed.contactPhone),
+    periodText: s(parsed.periodText),
+    startDate: s(parsed.startDate),
+    endDate: s(parsed.endDate),
+    castingDate: s(parsed.castingDate),
+    workContent: s(parsed.workContent),
+    quantity: s(parsed.quantity),
+    suppliedItems: s(parsed.suppliedItems),
+    soilQuantity: s(parsed.soilQuantity),
+    cautions: s(parsed.cautions),
+  };
+}
+
+function finalizeProjectRequestExtraction(
+  fields: Omit<ProjectRequestExtraction, "confidence" | "unclearFields">
+): ProjectRequestExtraction {
+  const unclearFields = Object.entries(PROJECT_REQUEST_FIELD_LABEL)
+    .filter(([key]) => (fields as unknown as Record<string, unknown>)[key] == null)
+    .map(([, label]) => label);
+  const coreFieldsFilled = [fields.projectName, fields.customerName, fields.siteAddress, fields.workContent].filter(
+    Boolean
+  ).length;
+  const confidence: ProjectRequestExtraction["confidence"] = coreFieldsFilled >= 2 ? "high" : "needs_review";
+  return { ...fields, unclearFields, confidence };
+}
+
+const UNAVAILABLE_PROJECT_REQUEST: ProjectRequestExtraction = {
+  projectName: null,
+  customerName: null,
+  primeContractorName: null,
+  siteAddress: null,
+  contactName: null,
+  contactPhone: null,
+  periodText: null,
+  startDate: null,
+  endDate: null,
+  castingDate: null,
+  workContent: null,
+  quantity: null,
+  suppliedItems: null,
+  soilQuantity: null,
+  cautions: null,
+  unclearFields: Object.values(PROJECT_REQUEST_FIELD_LABEL),
+  confidence: "unavailable",
+};
+
+export async function extractProjectRequestFromText(text: string): Promise<ProjectRequestExtraction> {
+  if (isMockMode()) return mockExtractProjectRequest(text);
+  try {
+    const raw = await callAnthropic(PROJECT_REQUEST_SYSTEM, text);
+    return finalizeProjectRequestExtraction(parseProjectRequestJson(raw));
+  } catch (err) {
+    console.error("[ai] extractProjectRequestFromText: falling back to mock", err);
+    return mockExtractProjectRequest(text);
+  }
+}
+
+export async function extractProjectRequestFromImage(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp"
+): Promise<ProjectRequestExtraction> {
+  if (isMockMode()) return UNAVAILABLE_PROJECT_REQUEST;
+  try {
+    const raw = await callAnthropicVision(
+      PROJECT_REQUEST_SYSTEM,
+      base64Image,
+      mediaType,
+      "この画像の依頼内容を読み取ってください。"
+    );
+    return finalizeProjectRequestExtraction(parseProjectRequestJson(raw));
+  } catch (err) {
+    console.error("[ai] extractProjectRequestFromImage: failed", err);
+    return UNAVAILABLE_PROJECT_REQUEST;
+  }
+}
+
+export async function extractProjectRequestFromPdf(base64Pdf: string): Promise<ProjectRequestExtraction> {
+  if (isMockMode()) return UNAVAILABLE_PROJECT_REQUEST;
+  try {
+    const raw = await callAnthropicDocument(
+      PROJECT_REQUEST_SYSTEM,
+      base64Pdf,
+      "このPDFの依頼内容を読み取ってください。"
+    );
+    return finalizeProjectRequestExtraction(parseProjectRequestJson(raw));
+  } catch (err) {
+    console.error("[ai] extractProjectRequestFromPdf: failed", err);
+    return UNAVAILABLE_PROJECT_REQUEST;
+  }
+}
+
+// 「○○市○○町」のような住所表記を拾う簡易パターン(市区町村までの部分一致)
+const ADDRESS_PATTERN = /([一-龠ぁ-んァ-ヶA-Za-z0-9]{2,10}[都道府県]?[一-龠ぁ-んァ-ヶ]{1,6}[市区町村][一-龠ぁ-んァ-ヶ0-90-9丁目番地の\-－]*)/;
+const PERIOD_PATTERN = /(\d{1,2}月\d{1,2}日)\s*[~〜\-−]\s*(\d{1,2}月\d{1,2}日)/;
+
+function mockExtractProjectRequest(rawText: string): ProjectRequestExtraction {
+  const periodMatch = rawText.match(PERIOD_PATTERN);
+  const fields: Omit<ProjectRequestExtraction, "confidence" | "unclearFields"> = {
+    projectName: null, // モックでは案件名を断定せず、常に人間の確認候補にする
+    customerName: extractPrefixed(rawText, ["元請", "発注者", "顧客"]),
+    primeContractorName: extractPrefixed(rawText, ["元請"]),
+    siteAddress: rawText.match(ADDRESS_PATTERN)?.[0] ?? null,
+    contactName: extractPrefixed(rawText, ["担当者", "担当"]),
+    contactPhone: rawText.match(MOBILE_PATTERN)?.[0] ?? rawText.match(PHONE_PATTERN)?.[0] ?? null,
+    periodText: periodMatch ? periodMatch[0] : null,
+    startDate: null, // 年が不明な原文がほとんどのため、モックでは断定しない
+    endDate: null,
+    castingDate: null,
+    workContent: rawText.trim() || null, // 何も構造化できなくても原文は工事内容の手がかりとして残す
+    quantity: null,
+    suppliedItems: extractPrefixed(rawText, ["支給品"]),
+    soilQuantity: rawText.match(/残土\s*(\d+(?:\.\d+)?\s*m3)/)?.[1] ?? null,
+    cautions: null,
+  };
+  return finalizeProjectRequestExtraction(fields);
 }
