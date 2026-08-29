@@ -15,7 +15,13 @@ function toDateInput(value: string | null): string {
   return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
 }
 
-export function NewProjectPageClient({ customers }: { customers: CustomerOption[] }) {
+export function NewProjectPageClient({
+  customers,
+  initialTranscript,
+}: {
+  customers: CustomerOption[];
+  initialTranscript?: string;
+}) {
   // 見積依頼の読み取り結果でフォームの初期値を差し替えるため、keyを変えて
   // ProjectFormを再マウントする(defaultValueのuncontrolled inputへ反映するため)。
   const [scanCount, setScanCount] = useState(0);
@@ -44,7 +50,7 @@ export function NewProjectPageClient({ customers }: { customers: CustomerOption[
   return (
     <>
       <div className="max-w-lg">
-        <ProjectRequestScanner onExtracted={handleExtracted} />
+        <ProjectRequestScanner onExtracted={handleExtracted} initialTranscript={initialTranscript} />
       </div>
       <Card className="max-w-lg">
         <ProjectForm

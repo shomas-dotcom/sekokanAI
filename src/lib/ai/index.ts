@@ -459,12 +459,16 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
   };
 }
 
-// ダッシュボードの「何でも音声で話す」窓口が、話した内容を日報かKY(危険予知)の
-// どちらに振り分けるかを判定する。どちらとも言い切れない内容(挨拶のみ・意味不明瞭等)は
-// 日報側に倒す(現場で最も使う頻度が高く、間違えても内容はそのまま確認・修正できるため)。
-export type VoiceIntent = "DAILY_REPORT" | "KY";
+// ダッシュボードの「何でも音声で話す」窓口が、話した内容を日報・KY(危険予知)・
+// 顧客登録・従業員登録・案件依頼のどれに振り分けるかを判定する。どれとも言い切れない
+// 内容(挨拶のみ・意味不明瞭等)は日報側に倒す(現場で最も使う頻度が高く、間違えても
+// 内容はそのまま確認・修正できるため)。
+export type VoiceIntent = "DAILY_REPORT" | "KY" | "CUSTOMER" | "EMPLOYEE" | "PROJECT_REQUEST";
 
 const KY_INTENT_WORDS = ["危険予知", "ヒヤリハット", "ヒヤリ・ハット", "KY活動", "危険ポイント", "危険予知活動"];
+const CUSTOMER_INTENT_WORDS = ["顧客登録", "取引先登録", "会社名は", "御中", "名刺"];
+const EMPLOYEE_INTENT_WORDS = ["従業員登録", "作業員登録", "入社", "雇用区分"];
+const PROJECT_REQUEST_INTENT_WORDS = ["見積依頼", "工事依頼", "元請", "発注者"];
 
 export async function classifyVoiceIntent(rawTextInput: string): Promise<VoiceIntent> {
   const rawText = normalizeExtractedText(rawTextInput);
@@ -480,19 +484,27 @@ export async function classifyVoiceIntent(rawTextInput: string): Promise<VoiceIn
 }
 
 function mockClassifyVoiceIntent(rawText: string): VoiceIntent {
-  return KY_INTENT_WORDS.some((w) => rawText.includes(w)) ? "KY" : "DAILY_REPORT";
+  if (KY_INTENT_WORDS.some((w) => rawText.includes(w))) return "KY";
+  if (CUSTOMER_INTENT_WORDS.some((w) => rawText.includes(w))) return "CUSTOMER";
+  if (EMPLOYEE_INTENT_WORDS.some((w) => rawText.includes(w))) return "EMPLOYEE";
+  if (PROJECT_REQUEST_INTENT_WORDS.some((w) => rawText.includes(w))) return "PROJECT_REQUEST";
+  return "DAILY_REPORT";
 }
 
 async function aiClassifyVoiceIntent(rawText: string): Promise<VoiceIntent> {
-  const system = `あなたは建設現場の音声入力を振り分けるアシスタントです。
-話された内容が次のどちらに近いか判定し、"DAILY_REPORT" または "KY" のどちらか一語だけを出力してください
+  const system = `あなたは建設会社の業務システムの音声入力を振り分けるアシスタントです。
+話された内容が次のどれに最も近いか判定し、該当する一語だけを出力してください
 (説明文は一切不要です)。
 - DAILY_REPORT: その日の作業内容・作業員数・使用機械・時間・天候などを報告する内容(作業日報)
 - KY: これから行う作業の危険ポイント・注意点を予知する内容(危険予知活動、KY活動)
+- CUSTOMER: 取引先(会社・担当者)を新しく登録するための情報(会社名・担当者名・電話番号等)
+- EMPLOYEE: 自社の従業員を新しく登録するための情報(氏名・役職・入社日等)
+- PROJECT_REQUEST: 元請や発注者から届いた見積依頼・工事依頼の内容(現場住所・工期・工事内容等)
 判断に迷う場合は必ず DAILY_REPORT としてください。`;
 
   const raw = (await callAnthropic(system, rawText)).trim();
-  return raw.includes("KY") ? "KY" : "DAILY_REPORT";
+  const valid: VoiceIntent[] = ["KY", "CUSTOMER", "EMPLOYEE", "PROJECT_REQUEST", "DAILY_REPORT"];
+  return valid.find((v) => raw.includes(v)) ?? "DAILY_REPORT";
 }
 
 export type KyItem = { risk: string; countermeasure: string };

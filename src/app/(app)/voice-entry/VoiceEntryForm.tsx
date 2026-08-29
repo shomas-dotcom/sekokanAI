@@ -9,8 +9,9 @@ type ProjectOption = { id: string; name: string; customerName: string };
 
 /**
  * ベテラン・年配の方でも迷わないよう、選択肢をできる限り減らした音声入力フォーム。
- * 「日報」か「KY」かは選ばせず、話した内容から自動で振り分ける(actions.ts参照)。
- * ボタン・文字を大きくし、手順は「現場を選ぶ→マイクで話す→送信する」の3つだけにする。
+ * 「日報・KY・顧客登録・従業員登録・案件依頼」のどれかは選ばせず、話した内容から
+ * 自動で振り分ける(actions.ts参照)。現場の選択は日報・KYのときだけ必要なので、
+ * 必須にはしない(顧客・従業員の登録では現場が無くても話し始められるように)。
  */
 export function VoiceEntryForm({
   projects,
@@ -26,17 +27,14 @@ export function VoiceEntryForm({
 
   return (
     <form action={formAction} className="flex flex-col gap-6">
-      <FieldLabel label="① 現場を選ぶ" required>
+      <FieldLabel label="① 現場を選ぶ(日報・危険予知の場合のみ)">
         <Select
           name="projectId"
-          required
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
           className="text-lg py-4"
         >
-          <option value="" disabled>
-            選択してください
-          </option>
+          <option value="">現場に関係ない内容(顧客登録・従業員登録など)</option>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
               {p.customerName} / {p.name}
@@ -54,10 +52,12 @@ export function VoiceEntryForm({
           onTranscript={(t) => setHasText(t.trim().length > 0)}
         />
         <p className="text-center text-sm text-slate-600">
-          今日の作業の様子や、気をつけることを、そのまま話してください
+          日報・危険予知・新しい取引先・従業員・見積依頼など、何でもそのまま話してください
           <br />
           <span className="text-xs text-slate-400">
             例:「今日は坂戸市役所の現場。作業員4名。バックホウで掘削。8時開始、17時終了。」
+            <br />
+            例:「会社名は若葉産業。担当は山田さん。電話は03-1234-5678。」
           </span>
         </p>
       </div>

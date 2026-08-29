@@ -13,8 +13,11 @@ import type { ProjectRequestExtraction } from "@/lib/ai";
  */
 export function ProjectRequestScanner({
   onExtracted,
+  initialTranscript,
 }: {
   onExtracted: (extraction: ProjectRequestExtraction, matchedCustomerId: string | null) => void;
+  /** ダッシュボードの音声入力で顧客が一致しなかった場合、読み取り済みの文章を引き継いで表示する */
+  initialTranscript?: string;
 }) {
   const [state, formAction, pending] = useActionState<ProjectRequestScanState, FormData>(
     async (prevState, formData) => {
@@ -28,7 +31,7 @@ export function ProjectRequestScanner({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  const [hasText, setHasText] = useState(false);
+  const [hasText, setHasText] = useState(Boolean(initialTranscript?.trim()));
 
   function submitFile(input: HTMLInputElement | null) {
     if (!input?.files?.[0] || !formRef.current) return;
@@ -38,6 +41,11 @@ export function ProjectRequestScanner({
   return (
     <form ref={formRef} action={formAction} className="flex flex-col gap-3 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 p-4">
       <p className="text-sm font-semibold text-slate-700">見積依頼から自動で入力する</p>
+      {initialTranscript && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          音声入力で話した内容を引き継いでいます。一致する顧客が見つからなかったため、下の顧客欄で選択・新規登録してから「この内容を読み取る」を押してください。
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -91,6 +99,7 @@ export function ProjectRequestScanner({
         ref={textareaRef}
         name="transcript"
         rows={4}
+        defaultValue={initialTranscript}
         onChange={(e) => setHasText(e.target.value.trim().length > 0)}
         placeholder={"例:\n○○市○○町\n土間コン30㎡\n残土10m3\nブロック20m\n工期○月○日〜○月○日"}
       />

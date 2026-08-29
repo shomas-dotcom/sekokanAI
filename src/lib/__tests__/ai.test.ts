@@ -136,6 +136,20 @@ describe("classifyVoiceIntent (モック実装、ダッシュボードの音声�
   it("判断に迷う短い内容も日報側に倒す(現場で使う頻度が高いため)", async () => {
     expect(await classifyVoiceIntent("お疲れ様です。")).toBe("DAILY_REPORT");
   });
+
+  it("名刺・会社名の登録内容はCUSTOMERと判定する", async () => {
+    expect(await classifyVoiceIntent("会社名は若葉産業。担当は山田さん。")).toBe("CUSTOMER");
+  });
+
+  it("従業員登録の内容はEMPLOYEEと判定する", async () => {
+    expect(await classifyVoiceIntent("従業員登録です。氏名は田中太郎。")).toBe("EMPLOYEE");
+  });
+
+  it("元請からの見積依頼はPROJECT_REQUESTと判定する", async () => {
+    expect(await classifyVoiceIntent("元請から見積依頼が来ました。工期は9月中です。")).toBe(
+      "PROJECT_REQUEST"
+    );
+  });
 });
 
 describe("AI関数の異常系入力(空文字・記号のみ等でも例外を投げない)", () => {
