@@ -5,8 +5,13 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { validateVisionImageFile } from "@/lib/fileValidation";
-import { extractBusinessCardFromImage, extractCustomerFieldsFromText, type BusinessCardExtraction } from "@/lib/ai";
+import { validateAiDocumentFile } from "@/lib/fileValidation";
+import {
+  extractBusinessCardFromImage,
+  extractBusinessCardFromPdf,
+  extractCustomerFieldsFromText,
+  type BusinessCardExtraction,
+} from "@/lib/ai";
 
 export type CustomerFormState = { error?: string } | undefined;
 
@@ -46,16 +51,18 @@ export async function scanBusinessCardAction(
   const file = formData.get("image");
 
   if (!(file instanceof File) || file.size === 0) {
-    return { error: "名刺の画像を選択してください。" };
+    return { error: "名刺の画像またはPDFを選択してください。" };
   }
-  const validationError = validateVisionImageFile(file);
+  const validationError = validateAiDocumentFile(file);
   if (validationError) return { error: validationError };
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
-  const mediaType = file.type as "image/jpeg" | "image/png" | "image/webp";
 
-  const extraction = await extractBusinessCardFromImage(base64, mediaType);
+  const extraction =
+    file.type === "application/pdf"
+      ? await extractBusinessCardFromPdf(base64)
+      : await extractBusinessCardFromImage(base64, file.type as "image/jpeg" | "image/png" | "image/webp");
 
   if (extraction.confidence === "unavailable") {
     return {

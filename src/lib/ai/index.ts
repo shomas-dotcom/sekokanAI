@@ -646,34 +646,15 @@ const EMPTY_BUSINESS_CARD_EXTRACTION: Omit<BusinessCardExtraction, "confidence">
   notes: null,
 };
 
-export async function extractBusinessCardFromImage(
-  base64Image: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp"
-): Promise<BusinessCardExtraction> {
-  if (isMockMode()) {
-    return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
-  }
-  try {
-    return await aiExtractBusinessCard(base64Image, mediaType);
-  } catch (err) {
-    console.error("[ai] extractBusinessCardFromImage: failed", err);
-    return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
-  }
-}
-
-async function aiExtractBusinessCard(
-  base64Image: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp"
-): Promise<BusinessCardExtraction> {
-  const system = `あなたは日本の建設会社の事務担当者を補助するアシスタントです。
-渡された名刺の画像から情報を読み取ってください。縦書き/横書き、日本語/英語、多少傾いた
+const BUSINESS_CARD_SYSTEM = `あなたは日本の建設会社の事務担当者を補助するアシスタントです。
+渡された名刺(画像またはPDF)から情報を読み取ってください。縦書き/横書き、日本語/英語、多少傾いた
 写真にも対応してください。
 必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
 形式: {"companyName": string|null, "personName": string|null, "position": string|null, "department": string|null, "postalCode": string|null, "address": string|null, "phone": string|null, "mobilePhone": string|null, "fax": string|null, "email": string|null, "companyUrl": string|null}
 最も重要な注意: 名刺に印字されていない/読み取れない項目は、絶対に推測で埋めずnullにしてください。
 電話番号は「TEL」、携帯は「携帯」「Mobile」「Cell」、FAXは「FAX」の表記を手がかりに区別してください。`;
 
-  const raw = await callAnthropicVision(system, base64Image, mediaType, "この名刺を読み取ってください。");
+function parseBusinessCardJson(raw: string): BusinessCardExtraction {
   const parsed = extractJson<Record<string, unknown>>(raw);
   if (!parsed) throw new Error("AI response was not valid JSON");
 
@@ -702,6 +683,42 @@ async function aiExtractBusinessCard(
   const confidence: BusinessCardExtraction["confidence"] = coreFieldsFilled >= 3 ? "high" : "needs_review";
 
   return { ...fields, confidence };
+}
+
+export async function extractBusinessCardFromImage(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp"
+): Promise<BusinessCardExtraction> {
+  if (isMockMode()) {
+    return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
+  }
+  try {
+    const raw = await callAnthropicVision(
+      BUSINESS_CARD_SYSTEM,
+      base64Image,
+      mediaType,
+      "この名刺を読み取ってください。"
+    );
+    return parseBusinessCardJson(raw);
+  } catch (err) {
+    console.error("[ai] extractBusinessCardFromImage: failed", err);
+    return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
+  }
+}
+
+// 「資料添付」タブ用(名刺をスキャンしたPDF、または名刺付きの資料PDF)。画像版と
+// 判定基準・抽出項目は完全に同じにする。
+export async function extractBusinessCardFromPdf(base64Pdf: string): Promise<BusinessCardExtraction> {
+  if (isMockMode()) {
+    return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
+  }
+  try {
+    const raw = await callAnthropicDocument(BUSINESS_CARD_SYSTEM, base64Pdf, "この名刺を読み取ってください。");
+    return parseBusinessCardJson(raw);
+  } catch (err) {
+    console.error("[ai] extractBusinessCardFromPdf: failed", err);
+    return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
+  }
 }
 
 // 電話・メールアドレスは正規表現だけでも十分実用的に取れるため、名刺OCRと違い

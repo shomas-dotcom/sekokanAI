@@ -5,6 +5,7 @@ import {
   draftKyItems,
   classifyVoiceIntent,
   extractBusinessCardFromImage,
+  extractBusinessCardFromPdf,
   extractCustomerFieldsFromText,
   extractEmployeeFieldsFromText,
   extractProjectRequestFromText,
@@ -182,6 +183,12 @@ describe("AI関数の異常系入力(空文字・記号のみ等でも例外を�
     expect(result.personName).toBeNull();
   });
 
+  it("extractBusinessCardFromPdfはAI未設定時、それらしい偽データを作らずunavailableを返す", async () => {
+    const result = await extractBusinessCardFromPdf("dGVzdA==");
+    expect(result.confidence).toBe("unavailable");
+    expect(result.companyName).toBeNull();
+  });
+
   it("extractCustomerFieldsFromTextはAI未設定でも電話番号・メールアドレスを正規表現で拾える", async () => {
     const result = await extractCustomerFieldsFromText(
       "会社名は若葉産業。担当は山田さん。電話は03-1234-5678。携帯は090-1234-5678。メールはyamada@example.comです。"
@@ -337,6 +344,34 @@ describe("AI_API_KEY設定時(本物のAI呼び出しモード、fetchはモッ�
     expect(result.personName).toBe("山田太郎");
     expect(result.mobilePhone).toBe("090-1234-5678");
     expect(result.fax).toBeNull();
+    expect(result.confidence).toBe("high");
+  });
+
+  it("extractBusinessCardFromPdfは名刺PDFの読み取り結果を返す", async () => {
+    process.env.AI_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockAnthropicResponse(
+        JSON.stringify({
+          companyName: "若葉産業株式会社",
+          personName: "山田太郎",
+          position: null,
+          department: null,
+          postalCode: null,
+          address: null,
+          phone: "03-1234-5678",
+          mobilePhone: null,
+          fax: null,
+          email: "yamada@example.com",
+          companyUrl: null,
+        })
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await extractBusinessCardFromPdf("dGVzdA==");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.companyName).toBe("若葉産業株式会社");
     expect(result.confidence).toBe("high");
   });
 
