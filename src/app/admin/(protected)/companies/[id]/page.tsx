@@ -98,7 +98,24 @@ export default async function AdminCompanyDetailPage({
 
       <Card>
         <h2 className="mb-3 font-semibold text-slate-900">ユーザー一覧</h2>
-        <table className="w-full text-left text-sm">
+        {/* スマホ幅ではテーブルだと横スクロールが発生するため、カード表示にする */}
+        <div className="flex flex-col gap-2 sm:hidden">
+          {company.users.map((u) => (
+            <div key={u.id} className="rounded-xl border border-slate-200 p-3 text-sm">
+              <p className="font-medium text-slate-900">
+                {u.name}
+                {u.deletedAt && <span className="ml-1 text-xs text-slate-400">(退会済み)</span>}
+              </p>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                <span>{u.email}</span>
+                <span>{u.role === "ADMIN" ? "管理者" : "一般社員"}</span>
+                <span>最終ログイン: {u.lastLoginAt ? u.lastLoginAt.toLocaleString("ja-JP") : "—"}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <table className="hidden w-full text-left text-sm sm:table">
           <thead className="border-b border-slate-200 text-slate-500">
             <tr>
               <th className="py-2 pr-2 font-medium">氏名</th>

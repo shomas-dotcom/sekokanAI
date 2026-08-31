@@ -40,8 +40,40 @@ export default async function RateMasterPage() {
           まだ単価が登録されていません。
         </p>
       ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[560px] text-left text-sm">
+        <>
+          {/* スマホ幅ではテーブルだと横スクロールが発生するため、カード表示にする */}
+          <div className="flex flex-col gap-2 sm:hidden">
+            {items.map((item) => {
+              const lastPriceDate = latestPriceDateByItemId.get(item.id) ?? item.updatedAt;
+              const stale = isRateStale(lastPriceDate);
+              return (
+                <Link
+                  key={item.id}
+                  href={`/rate-master/${item.id}`}
+                  className="block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs text-slate-500">{RATE_CATEGORY_LABEL[item.category]}</p>
+                      <p className="font-medium text-orange-700">{item.name}</p>
+                    </div>
+                    <p className="shrink-0 text-right font-semibold text-slate-900">
+                      {item.unitPrice.toLocaleString("ja-JP")}円<span className="text-xs text-slate-400">/{item.unit}</span>
+                    </p>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
+                    {item.costPrice != null && <span>原価: {item.costPrice.toLocaleString("ja-JP")}円</span>}
+                    <span className={stale ? "text-amber-700" : ""}>
+                      {stale && "⚠ "}最終更新: {lastPriceDate.toLocaleDateString("ja-JP")}
+                    </span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+
+          <Card className="hidden overflow-x-auto p-0 sm:block">
+          <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-medium">区分</th>
@@ -80,7 +112,8 @@ export default async function RateMasterPage() {
               })}
             </tbody>
           </table>
-        </Card>
+          </Card>
+        </>
       )}
     </div>
   );
