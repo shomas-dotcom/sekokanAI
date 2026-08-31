@@ -11,6 +11,8 @@ import {
   extractProjectRequestFromText,
   extractProjectRequestFromImage,
   extractIdCardFromImage,
+  analyzeAiIntakeFromText,
+  analyzeAiIntakeFromImage,
 } from "@/lib/ai";
 
 function mockAnthropicResponse(text: string, ok = true) {
@@ -409,5 +411,75 @@ describe("AI_API_KEY設定時(本物のAI呼び出しモード、fetchはモッ�
 
     const result = await extractBusinessCardFromImage("dGVzdA==", "image/jpeg");
     expect(result.confidence).toBe("needs_review");
+  });
+
+  it("analyzeAiIntakeFromImageはAI設定時、documentTypeに応じてcustomer/projectを構造化して返す", async () => {
+    process.env.AI_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockAnthropicResponse(
+        JSON.stringify({
+          documentType: "business_card",
+          customer: {
+            companyName: "若葉産業株式会社",
+            personName: "山田太郎",
+            position: null,
+            department: null,
+            postalCode: null,
+            address: null,
+            phone: "03-1234-5678",
+            mobilePhone: null,
+            fax: null,
+            email: null,
+            companyUrl: null,
+          },
+          project: null,
+          employee: null,
+        })
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await analyzeAiIntakeFromImage("dGVzdA==", "image/jpeg");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.documentType).toBe("business_card");
+    expect(result.customer?.companyName).toBe("若葉産業株式会社");
+    expect(result.project).toBeNull();
+    expect(result.confidence).toBe("high");
+  });
+});
+
+describe("analyzeAiIntakeFromText (AIかんたん登録の統合判定、モック実装)", () => {
+  it("会社名・担当者の登録っぽい内容はbusiness_cardと判定し、customerを埋める", async () => {
+    const result = await analyzeAiIntakeFromText("会社名は若葉産業。担当は山田さん。電話は03-1234-5678。");
+    expect(result.documentType).toBe("business_card");
+    expect(result.customer?.companyName).toBe("若葉産業");
+    expect(result.project).toBeNull();
+  });
+
+  it("見積依頼っぽい内容はproject_messageと判定し、projectを埋める", async () => {
+    const result = await analyzeAiIntakeFromText("所沢市泉町\n土間コン30㎡\n残土10m3\n工期9月1日〜9月30日");
+    expect(result.documentType).toBe("project_message");
+    expect(result.project).not.toBeNull();
+    expect(result.customer).toBeNull();
+  });
+
+  it("どちらとも判定できない内容はunknownとして扱い、AIが勝手に情報を作らない", async () => {
+    const result = await analyzeAiIntakeFromText("お疲れ様です。");
+    // モックのフォールバック判定ではdaily_report相当(現場報告)扱いになるため、
+    // 顧客・案件どちらの候補も作らないことだけを確認する(勝手な断定をしない)
+    expect(result.customer).toBeNull();
+    expect(result.project === null || result.project?.projectName === null).toBe(true);
+  });
+});
+
+describe("analyzeAiIntakeFromImage (AIかんたん登録の統合判定)", () => {
+  it("AI未設定時、それらしい偽データを作らずunavailableを返す", async () => {
+    const result = await analyzeAiIntakeFromImage("dGVzdA==", "image/jpeg");
+    expect(result.confidence).toBe("unavailable");
+    expect(result.documentType).toBe("unknown");
+    expect(result.customer).toBeNull();
+    expect(result.project).toBeNull();
+    expect(result.employee).toBeNull();
   });
 });

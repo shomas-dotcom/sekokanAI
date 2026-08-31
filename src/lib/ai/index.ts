@@ -488,6 +488,10 @@ function mockClassifyVoiceIntent(rawText: string): VoiceIntent {
   if (CUSTOMER_INTENT_WORDS.some((w) => rawText.includes(w))) return "CUSTOMER";
   if (EMPLOYEE_INTENT_WORDS.some((w) => rawText.includes(w))) return "EMPLOYEE";
   if (PROJECT_REQUEST_INTENT_WORDS.some((w) => rawText.includes(w))) return "PROJECT_REQUEST";
+  // 「見積依頼」等の単語が無くても、住所らしき表記+数量・単位の両方が含まれる場合は
+  // 見積依頼・工事依頼の文面である可能性が高いと判断する(LINE等の実際の文面は
+  // 「見積依頼」と明記しないことが多いため)。
+  if (ADDRESS_PATTERN.test(rawText) && QUANTITY_UNIT_PATTERN.test(rawText)) return "PROJECT_REQUEST";
   return "DAILY_REPORT";
 }
 
@@ -1116,5 +1120,216 @@ export async function extractIdCardFromPdf(base64Pdf: string): Promise<IdCardExt
   } catch (err) {
     console.error("[ai] extractIdCardFromPdf: failed", err);
     return UNAVAILABLE_ID_CARD;
+  }
+}
+
+// --- AIかんたん登録(統合受付、2026-08-29追記) -------------------------------
+//
+// ダッシュボードの「AIかんたん登録」窓口。渡された内容(画像・PDF・テキスト)の
+// 種類を1回のAI呼び出しで判定し、該当する情報(顧客/案件/従業員)を抽出する。
+// 見積書・契約書・請求書は「顧客・案件情報の抽出」までを対象とし、明細行・
+// 契約条項・請求金額そのものの抽出は対象外(単価履歴機能や見積AI機能の
+// 別作業とする。ここで無理に手を広げてAIに金額を確定させることは絶対にしない)。
+
+export type AiIntakeDocumentType =
+  | "business_card"
+  | "estimate_request"
+  | "estimate"
+  | "contract"
+  | "invoice"
+  | "employee_id"
+  | "project_message"
+  | "unknown";
+
+export type AiIntakeResult = {
+  documentType: AiIntakeDocumentType;
+  customer: BusinessCardExtraction | null;
+  project: ProjectRequestExtraction | null;
+  employee: IdCardExtraction | null;
+  confidence: "high" | "needs_review" | "unavailable";
+};
+
+const UNAVAILABLE_INTAKE: AiIntakeResult = {
+  documentType: "unknown",
+  customer: null,
+  project: null,
+  employee: null,
+  confidence: "unavailable",
+};
+
+const AI_INTAKE_SYSTEM = `あなたは建設会社の受付AIです。渡された資料(名刺・見積依頼・見積書・契約書・
+請求書・身分証・LINEやメール等の文面のいずれか)の種類を判定し、該当する情報を抽出してください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式:
+{
+  "documentType": "business_card"|"estimate_request"|"estimate"|"contract"|"invoice"|"employee_id"|"project_message"|"unknown",
+  "customer": {"companyName":string|null,"personName":string|null,"position":string|null,"department":string|null,"postalCode":string|null,"address":string|null,"phone":string|null,"mobilePhone":string|null,"fax":string|null,"email":string|null,"companyUrl":string|null} または null,
+  "project": {"projectName":string|null,"customerName":string|null,"primeContractorName":string|null,"siteAddress":string|null,"contactName":string|null,"contactPhone":string|null,"periodText":string|null,"startDate":string|null,"endDate":string|null,"castingDate":string|null,"workContent":string|null,"quantity":string|null,"suppliedItems":string|null,"soilQuantity":string|null,"cautions":string|null} または null,
+  "employee": {"name":string|null,"nameKana":string|null,"licenseType":string|null,"licenseExpiry":string|null} または null
+}
+判定基準:
+- 名刺(氏名・会社名・役職・連絡先が主) → business_card。customerのみ埋める(project/employeeはnull)
+- 元請/施主からの見積依頼・工事依頼の文面(LINE・メール・手書きメモ等含む) → estimate_request または project_message。customerとprojectを可能な範囲で埋める(employeeはnull)
+- 金額明細を含む正式な見積書・契約書・請求書 → estimate/contract/invoice。customerとprojectを埋める(明細行・金額そのものはこの場では抽出しない)
+- 運転免許証・マイナンバーカード等の身分証 → employee_id。employeeのみ埋める(customer/projectはnull)
+- LINE等のチャット画面のスクリーンショットの場合、時刻表示・既読・スタンプ・アプリのUI文字は内容として扱わず、実際のメッセージ本文のみを判定材料にすること
+- どれにも当てはまらない、判定できない場合は unknown とし、customer/project/employeeは全てnullにする
+最も重要な注意: 記載されていない/読み取れない項目は、絶対に推測で埋めずnullにしてください。
+startDate/endDate/castingDateは西暦のYYYY-MM-DD形式にし、年が確定できない場合はnullのままperiodTextに原文を残してください。`;
+
+function asStringOrNull(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+function parseAiIntakeJson(raw: string): AiIntakeResult {
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+
+  const documentTypes: AiIntakeDocumentType[] = [
+    "business_card",
+    "estimate_request",
+    "estimate",
+    "contract",
+    "invoice",
+    "employee_id",
+    "project_message",
+    "unknown",
+  ];
+  const documentType = documentTypes.includes(parsed.documentType as AiIntakeDocumentType)
+    ? (parsed.documentType as AiIntakeDocumentType)
+    : "unknown";
+
+  const c = parsed.customer as Record<string, unknown> | null;
+  const customer: BusinessCardExtraction | null = c
+    ? {
+        companyName: asStringOrNull(c.companyName),
+        personName: asStringOrNull(c.personName),
+        position: asStringOrNull(c.position),
+        department: asStringOrNull(c.department),
+        postalCode: asStringOrNull(c.postalCode),
+        address: asStringOrNull(c.address),
+        phone: asStringOrNull(c.phone),
+        mobilePhone: asStringOrNull(c.mobilePhone),
+        fax: asStringOrNull(c.fax),
+        email: asStringOrNull(c.email),
+        companyUrl: asStringOrNull(c.companyUrl),
+        notes: null,
+        confidence: "high",
+      }
+    : null;
+
+  const p = parsed.project as Record<string, unknown> | null;
+  const project: ProjectRequestExtraction | null = p
+    ? {
+        projectName: asStringOrNull(p.projectName),
+        customerName: asStringOrNull(p.customerName),
+        primeContractorName: asStringOrNull(p.primeContractorName),
+        siteAddress: asStringOrNull(p.siteAddress),
+        contactName: asStringOrNull(p.contactName),
+        contactPhone: asStringOrNull(p.contactPhone),
+        periodText: asStringOrNull(p.periodText),
+        startDate: asStringOrNull(p.startDate),
+        endDate: asStringOrNull(p.endDate),
+        castingDate: asStringOrNull(p.castingDate),
+        workContent: asStringOrNull(p.workContent),
+        quantity: asStringOrNull(p.quantity),
+        suppliedItems: asStringOrNull(p.suppliedItems),
+        soilQuantity: asStringOrNull(p.soilQuantity),
+        cautions: asStringOrNull(p.cautions),
+        unclearFields: [],
+        confidence: "high",
+      }
+    : null;
+
+  const e = parsed.employee as Record<string, unknown> | null;
+  const employee: IdCardExtraction | null = e
+    ? {
+        name: asStringOrNull(e.name),
+        nameKana: asStringOrNull(e.nameKana),
+        dateOfBirth: null,
+        address: null,
+        licenseNumber: null,
+        licenseType: asStringOrNull(e.licenseType),
+        licenseExpiry: asStringOrNull(e.licenseExpiry),
+        confidence: "high",
+      }
+    : null;
+
+  // documentType不明の場合は必ずユーザーに選ばせる(REQUIREMENTS.mdの
+  // 「unknownでもエラー終了せず登録先を選択させる」方針)。
+  const confidence: AiIntakeResult["confidence"] =
+    documentType === "unknown" || (!customer && !project && !employee) ? "needs_review" : "high";
+
+  return { documentType, customer, project, employee, confidence };
+}
+
+function mockAnalyzeAiIntakeFromText(text: string): AiIntakeResult {
+  const intent = mockClassifyVoiceIntent(text);
+  if (intent === "CUSTOMER") {
+    return {
+      documentType: "business_card",
+      customer: mockExtractCustomerFields(text),
+      project: null,
+      employee: null,
+      confidence: "needs_review",
+    };
+  }
+  if (intent === "EMPLOYEE") {
+    return { documentType: "employee_id", customer: null, project: null, employee: null, confidence: "unavailable" };
+  }
+  if (intent === "PROJECT_REQUEST") {
+    return {
+      documentType: "project_message",
+      customer: null,
+      project: mockExtractProjectRequest(text),
+      employee: null,
+      confidence: "needs_review",
+    };
+  }
+  return { ...UNAVAILABLE_INTAKE, confidence: "needs_review" };
+}
+
+export async function analyzeAiIntakeFromText(text: string): Promise<AiIntakeResult> {
+  if (isMockMode()) return mockAnalyzeAiIntakeFromText(text);
+  try {
+    const raw = await callAnthropic(AI_INTAKE_SYSTEM, text);
+    return parseAiIntakeJson(raw);
+  } catch (err) {
+    console.error("[ai] analyzeAiIntakeFromText: falling back to mock", err);
+    return mockAnalyzeAiIntakeFromText(text);
+  }
+}
+
+export async function analyzeAiIntakeFromImage(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp"
+): Promise<AiIntakeResult> {
+  if (isMockMode()) return UNAVAILABLE_INTAKE;
+  try {
+    const raw = await callAnthropicVision(
+      AI_INTAKE_SYSTEM,
+      base64Image,
+      mediaType,
+      "この画像の種類を判定し、該当する情報を抽出してください。"
+    );
+    return parseAiIntakeJson(raw);
+  } catch (err) {
+    console.error("[ai] analyzeAiIntakeFromImage: failed", err);
+    return UNAVAILABLE_INTAKE;
+  }
+}
+
+export async function analyzeAiIntakeFromPdf(base64Pdf: string): Promise<AiIntakeResult> {
+  if (isMockMode()) return UNAVAILABLE_INTAKE;
+  try {
+    const raw = await callAnthropicDocument(
+      AI_INTAKE_SYSTEM,
+      base64Pdf,
+      "このPDFの種類を判定し、該当する情報を抽出してください。"
+    );
+    return parseAiIntakeJson(raw);
+  } catch (err) {
+    console.error("[ai] analyzeAiIntakeFromPdf: failed", err);
+    return UNAVAILABLE_INTAKE;
   }
 }

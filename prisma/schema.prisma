@@ -87,6 +87,7 @@ model Company {
   projectFiles              ProjectFile[]
   entityFiles               EntityFile[]
   rateMasterPriceHistories  RateMasterPriceHistory[]
+  aiExtractions             AiExtraction[]
 }
 
 // Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
@@ -878,4 +879,50 @@ model InvoiceItem {
   remarks   String?
 
   @@index([invoiceId])
+}
+
+// --- AIかんたん登録(2026-08-29追記) -----------------------------------------
+//
+// ダッシュボードの「AIかんたん登録」で撮影・添付・貼り付け・音声した内容を、
+// 種類判定→抽出した直後にDBへ確定保存せず、一度ここへ一時保存する
+// (ai_inbox)。ユーザーが確認画面で内容を見て「この内容で登録」を押した
+// 時点で初めて顧客・案件等の本体テーブルへ書き込む(AIが勝手に確定しない
+// という一貫した方針を、複数エンティティにまたがる登録でも維持するため)。
+enum AiDocumentType {
+  BUSINESS_CARD
+  ESTIMATE_REQUEST
+  ESTIMATE
+  CONTRACT
+  INVOICE
+  EMPLOYEE_ID
+  PROJECT_MESSAGE
+  UNKNOWN
+}
+
+enum AiExtractionStatus {
+  PROCESSING
+  REVIEW_REQUIRED
+  APPROVED
+  REJECTED
+  FAILED
+}
+
+model AiExtraction {
+  id              String             @id @default(cuid())
+  companyId       String
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdByUserId String
+  documentType    AiDocumentType
+  status          AiExtractionStatus @default(REVIEW_REQUIRED)
+  sourceSummary   String? // 何を読み取ったか(ファイル名・音声の冒頭等)の簡単な表示用メモ
+  extractedJson   String // 顧客/案件/従業員の抽出候補・重複候補・確信度をまとめたJSON
+  errorMessage    String? // 解析に失敗した場合の理由(画面表示用)
+  resultCustomerId String?
+  resultProjectId  String?
+  resultEmployeeId String?
+  createdAt       DateTime           @default(now())
+  reviewedAt      DateTime?
+
+  @@index([companyId])
+  @@index([companyId, status])
 }
