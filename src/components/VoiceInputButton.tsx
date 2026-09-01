@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { accumulateSpeechResults } from "@/lib/speechRecognitionAccumulator";
 
 // ブラウザ標準のWeb Speech API(SpeechRecognition)を利用する。
 // 対応ブラウザ: Chrome/Edge/Safari(iOS/Android含む)。Firefox等は非対応のため
@@ -54,6 +55,12 @@ export function VoiceInputButton({
   const wantsListeningRef = useRef(false);
   // 権限拒否・マイク無し等、再開しても無駄なエラーの場合は自動再開しない
   const fatalErrorRef = useRef(false);
+  // event.results は同じ認識セッション内では過去の確定分も含めた累積配列で
+  // 毎回渡されてくる。このrefで「すでにbaseTextRefへ取り込んだ確定件数」を
+  // 覚えておき、まだ取り込んでいない新しい確定分だけを追記する
+  // (でないと確定するたびに全文を重複して追記してしまう=「同じ内容が何行も
+  // 増える」不具合になる)。新しい認識セッションを開始するたびに0へ戻す。
+  const committedFinalCountRef = useRef(0);
 
   useEffect(() => {
     setSupported(getSpeechRecognitionCtor() !== null);
@@ -88,19 +95,22 @@ export function VoiceInputButton({
     recognition.lang = "ja-JP";
     recognition.continuous = continuous;
     recognition.interimResults = continuous;
+    committedFinalCountRef.current = 0; // 新しいセッションなのでresults配列の番号は0から数え直しになる
     recognition.onresult = (event) => {
       if (continuous) {
-        let finalText = "";
-        let interimText = "";
+        const results: { isFinal: boolean; transcript: string }[] = [];
         for (let i = 0; i < event.results.length; i++) {
-          const result = event.results[i];
-          if (result.isFinal) finalText += result[0].transcript;
-          else interimText += result[0].transcript;
+          results.push({ isFinal: event.results[i].isFinal, transcript: event.results[i][0].transcript });
         }
-        applyTranscript((finalText + interimText).trim(), false);
-        if (finalText) baseTextRef.current = baseTextRef.current
-          ? `${baseTextRef.current}\n${finalText.trim()}`
-          : finalText.trim();
+        const { newFinalText, interimText, finalCount } = accumulateSpeechResults(
+          results,
+          committedFinalCountRef.current
+        );
+        committedFinalCountRef.current = finalCount;
+        applyTranscript((newFinalText + interimText).trim(), false);
+        if (newFinalText) baseTextRef.current = baseTextRef.current
+          ? `${baseTextRef.current}\n${newFinalText.trim()}`
+          : newFinalText.trim();
       } else {
         const text = event.results[0]?.[0]?.transcript ?? "";
         if (text) applyTranscript(text, true);
