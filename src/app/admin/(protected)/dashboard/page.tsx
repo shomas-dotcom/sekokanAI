@@ -2,20 +2,33 @@ import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui";
 
 export default async function AdminDashboardPage() {
-  const [companyCount, premiumCount, suspendedCount, userCount, recentAdminActions] =
+  const [companyCount, premiumCount, suspendedCount, userCount, recentAdminActions, payingCompanies] =
     await Promise.all([
       prisma.company.count(),
       prisma.company.count({ where: { plan: "PREMIUM" } }),
       prisma.company.count({ where: { isSuspended: true } }),
       prisma.user.count({ where: { deletedAt: null } }),
       prisma.platformAdminAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
+      // MRR(月間経常収益)は「実際に課金状態(プレミアム)かつ、料金プランが割り当て済み」の
+      // 会社だけを対象に、そのプランの月額を合計して出す。捏造した数字を出さないため、
+      // どちらか一方でも欠けている会社は合計に含めない。
+      prisma.company.findMany({
+        where: { plan: "PREMIUM", pricingPlanId: { not: null } },
+        select: { pricingPlan: { select: { monthlyPrice: true } } },
+      }),
     ]);
+
+  const mrr = payingCompanies.reduce((sum, c) => sum + (c.pricingPlan?.monthlyPrice ?? 0), 0);
+  const arr = mrr * 12;
+  const unassignedPaidCount = premiumCount - payingCompanies.length;
 
   const cards = [
     { label: "登録会社数", value: companyCount },
     { label: "AIプレミアム有効な会社数", value: premiumCount },
     { label: "利用停止中の会社数", value: suspendedCount },
     { label: "利用ユーザー数(退会除く)", value: userCount },
+    { label: "MRR(月間経常収益)", value: `${mrr.toLocaleString()}円` },
+    { label: "ARR(年間換算)", value: `${arr.toLocaleString()}円` },
   ];
 
   return (
@@ -31,12 +44,23 @@ export default async function AdminDashboardPage() {
         ))}
       </div>
 
+      {unassignedPaidCount > 0 && (
+        <Card className="border-amber-200 bg-amber-50">
+          <p className="text-sm font-semibold text-amber-800">
+            MRRに含まれていない有料会社が{unassignedPaidCount}社あります
+          </p>
+          <p className="mt-1 text-sm text-amber-700">
+            プレミアム契約中でも「料金プラン」が未割り当ての会社はMRR計算に含めていません(勝手に金額を推測しないため)。各社の詳細画面から料金プランを割り当ててください。
+          </p>
+        </Card>
+      )}
+
       <Card className="border-amber-200 bg-amber-50">
         <p className="text-sm font-semibold text-amber-800">
-          MRR・無料体験数・解約率・AI使用量・エラー件数は表示できません
+          無料体験数・解約率・AI使用量・サーバー費用・粗利益はまだ表示できません
         </p>
         <p className="mt-1 text-sm text-amber-700">
-          これらは決済(Stripe)連携と実際のAI API利用が始まってから正しい値を出せる項目です。まだ実装していないため、数字を作らずここに表示しないでおきます。決済連携(Phase 8)が完了次第、追加します。
+          これらは無料体験の期限管理とAI利用量の記録が実装されてから正しい値を出せる項目です(Phase2以降)。まだ実装していないため、数字を作らずここに表示しないでおきます。
         </p>
       </Card>
 

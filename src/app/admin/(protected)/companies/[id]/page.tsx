@@ -1,8 +1,15 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/platformAdminAuth";
-import { suspendCompanyAction, resumeCompanyAction } from "../../actions";
-import { Card, Input, Textarea, Button, Badge } from "@/components/ui";
+import {
+  suspendCompanyAction,
+  resumeCompanyAction,
+  assignCompanyPlanAction,
+  addCompanyNoteAction,
+} from "../../actions";
+import { Card, Input, Textarea, Select, Button, Badge } from "@/components/ui";
+
+const NOTE_TYPE_LABEL: Record<string, string> = { MEETING: "商談", INQUIRY: "問い合わせ" };
 
 export default async function AdminCompanyDetailPage({
   params,
@@ -17,9 +24,13 @@ export default async function AdminCompanyDetailPage({
     include: {
       users: { orderBy: { createdAt: "asc" } },
       _count: { select: { projects: true, quotes: true } },
+      pricingPlan: true,
+      notes: { orderBy: { createdAt: "desc" }, include: { createdByAdmin: { select: { name: true } } } },
     },
   });
   if (!company) notFound();
+
+  const plans = await prisma.plan.findMany({ orderBy: { sortOrder: "asc" } });
 
   // 運営者が個社のデータを閲覧した記録を残す(顧客データ閲覧の監査ログ)
   await prisma.platformAdminAuditLog.create({
@@ -47,8 +58,12 @@ export default async function AdminCompanyDetailPage({
       <Card>
         <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
           <div>
-            <dt className="text-slate-500">プラン</dt>
+            <dt className="text-slate-500">プラン(課金状態)</dt>
             <dd className="font-medium text-slate-900">{company.plan === "PREMIUM" ? "プレミアム" : "無料"}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">料金プラン(表示・請求用)</dt>
+            <dd className="font-medium text-slate-900">{company.pricingPlan?.name ?? "未割り当て"}</dd>
           </div>
           <div>
             <dt className="text-slate-500">現場数</dt>
@@ -94,6 +109,67 @@ export default async function AdminCompanyDetailPage({
             </Button>
           </form>
         )}
+      </Card>
+
+      <Card>
+        <h2 className="mb-3 font-semibold text-slate-900">料金プランの割り当て</h2>
+        <p className="mb-3 text-sm text-slate-500">
+          ここでの割り当ては表示・請求書用の分類です。実際に課金が発生する/しないは上の「プラン(課金状態)」(Stripe連携)側で決まります。
+        </p>
+        <form action={assignCompanyPlanAction} className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="companyId" value={company.id} />
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
+            料金プラン
+            <Select name="pricingPlanId" defaultValue={company.pricingPlanId ?? ""}>
+              <option value="">未割り当て</option>
+              {plans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name}(月額{plan.monthlyPrice.toLocaleString()}円)
+                </option>
+              ))}
+            </Select>
+          </label>
+          <Button type="submit" variant="secondary">
+            割り当てる
+          </Button>
+        </form>
+      </Card>
+
+      <Card>
+        <h2 className="mb-3 font-semibold text-slate-900">商談・問い合わせ履歴</h2>
+        {company.notes.length === 0 ? (
+          <p className="text-sm text-slate-500">まだ記録がありません。</p>
+        ) : (
+          <ul className="mb-4 flex flex-col gap-2 text-sm">
+            {company.notes.map((note) => (
+              <li key={note.id} className="rounded-xl border border-slate-200 p-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
+                    {NOTE_TYPE_LABEL[note.type]}
+                  </span>
+                  <span>{note.createdAt.toLocaleString("ja-JP")}</span>
+                  <span>{note.createdByAdmin?.name ?? "(不明)"}</span>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-slate-800">{note.content}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form action={addCompanyNoteAction} className="flex flex-col gap-3">
+          <input type="hidden" name="companyId" value={company.id} />
+          <div className="flex flex-wrap gap-3">
+            <label className="flex items-center gap-1.5 text-sm text-slate-700">
+              <input type="radio" name="type" value="MEETING" defaultChecked /> 商談
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-slate-700">
+              <input type="radio" name="type" value="INQUIRY" /> 問い合わせ
+            </label>
+          </div>
+          <Textarea name="content" rows={3} placeholder="例: 無料体験の延長を希望、来週再商談の予定" required />
+          <Button type="submit" variant="secondary" className="w-fit">
+            記録を追加
+          </Button>
+        </form>
       </Card>
 
       <Card>

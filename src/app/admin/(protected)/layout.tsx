@@ -19,6 +19,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <Link href="/admin/companies" className="hover:text-white">
                 会社一覧
               </Link>
+              <Link href="/admin/plans" className="hover:text-white">
+                料金プラン
+              </Link>
+              <Link href="/admin/products" className="hover:text-white">
+                商品管理
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm text-slate-300">

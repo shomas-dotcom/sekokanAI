@@ -88,6 +88,12 @@ model Company {
   entityFiles               EntityFile[]
   rateMasterPriceHistories  RateMasterPriceHistory[]
   aiExtractions             AiExtraction[]
+  // 現場AIの新しい料金プラン(ライト/スタンダード/プロ等)。既存のplan(FREE/PREMIUM)は
+  // Stripe連携の契約状態判定にそのまま残し、こちらは表示・請求書用の「どのプランで契約中か」を表す。
+  // 既存の契約会社は移行時点ではnullのまま(運営者が会社ごとに割り当てる)。
+  pricingPlanId             String?
+  pricingPlan               Plan?                    @relation(fields: [pricingPlanId], references: [id])
+  notes                     CompanyNote[]
 }
 
 // Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
@@ -285,6 +291,7 @@ model PlatformAdmin {
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
   sessions     PlatformAdminSession[]
+  companyNotes CompanyNote[]
 }
 
 model PlatformAdminSession {
@@ -925,4 +932,76 @@ model AiExtraction {
 
   @@index([companyId])
   @@index([companyId, status])
+}
+
+// ここから「マネタイズ機能(AIツール販売・商品管理・契約プラン)」関連のモデル。
+// 既存の業務モデル(顧客・案件・見積等)とは独立しており、運営者(PlatformAdmin)が
+// 商品・プランを管理し、契約会社(Company)に割り当てる形で使う。
+
+// 現場AI自体の料金プラン(例: ライト/スタンダード/プロ)。金額をコードに直書きせず、
+// 運営者が管理画面(/admin/plans)から追加・変更できるようにするためのマスタ。
+// 既存のCompany.plan(FREE/PREMIUM)はStripe Webhookの契約状態判定にそのまま使うため残す。
+// このPlanは「今どの段階の商品を、いくらで売っているか」の一覧・請求書表示用の情報。
+model Plan {
+  id             String    @id @default(cuid())
+  key            String    @unique // コードから安定して参照するためのキー(例: "light")
+  name           String // 表示名(例: ライト)
+  monthlyPrice   Int // 月額(円、税抜)
+  setupFee       Int       @default(0) // 初期費用(円、税抜)
+  description    String?
+  // 以下は将来の使用量上限機能(Phase2)のために先に用意しておく列。
+  // 現時点ではどの画面からも参照・強制していない(表示専用)。
+  aiRunLimit     Int? // 月あたりのAI実行回数上限(nullは無制限)
+  storageLimitMb Int?
+  userLimit      Int?
+  isActive       Boolean   @default(true) // falseにすると新規契約の選択肢から外れる(既存契約者には影響しない)
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  companies      Company[]
+}
+
+enum ProductSalesStatus {
+  DRAFT // 準備中(まだ販売しない)
+  ON_SALE // 販売中
+  DISCONTINUED // 販売終了
+}
+
+// 販売用の「AI業務改善ツール」商品カタログ(AI見積作成/AI写真帳作成 等を商品として売るための一覧)。
+// 導入会社数・売上・原価・利益は、どの契約会社がどの商品を使っているかを結びつける仕組み
+// (Phase2以降)ができてから正しい値を出せるため、今回は列を作らない
+// (根拠のない数字を表示しない、というCLAUDE.mdの方針に沿う)。
+model Product {
+  id             String             @id @default(cuid())
+  name           String
+  description    String?
+  targetCustomer String? // 対象顧客(例: 従業員10名以下の土木会社)
+  price          Int? // 買い切り価格(円、税抜)。月額商品の場合は空でよい
+  monthlyPrice   Int? // 月額価格(円、税抜)
+  setupFee       Int? // 初期費用(円、税抜)
+  featuresText   String? // 機能・できることの説明(箇条書きテキスト)
+  salesStatus    ProductSalesStatus @default(DRAFT)
+  sortOrder      Int                @default(0)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+enum CompanyNoteType {
+  MEETING // 商談履歴
+  INQUIRY // 問い合わせ履歴
+}
+
+// 契約会社(見込み客含む)に対する商談・問い合わせの記録。運営者(PlatformAdmin)が
+// 会社詳細画面から追記する営業メモ。テナント企業自身には見せない(運営者専用データ)。
+model CompanyNote {
+  id               String          @id @default(cuid())
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type             CompanyNoteType
+  content          String
+  createdByAdminId String?
+  createdByAdmin   PlatformAdmin?  @relation(fields: [createdByAdminId], references: [id])
+  createdAt        DateTime        @default(now())
+
+  @@index([companyId])
 }
