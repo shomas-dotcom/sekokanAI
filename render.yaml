@@ -24,6 +24,8 @@ services:
         sync: false # 未設定ならAI機能はモック応答のまま動作する
       - key: AI_API_PROVIDER
         value: anthropic
+      - key: TRANSCRIPTION_API_KEY
+        sync: false # 未設定なら音声入力の録音フォールバックは「文字起こし利用不可」の案内のみで動作する
       - key: GOOGLE_CLIENT_ID
         sync: false # 未設定なら「Googleでログイン/登録」ボタンが非表示になるだけ
       - key: GOOGLE_CLIENT_SECRET

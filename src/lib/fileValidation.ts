@@ -78,3 +78,32 @@ export function validateAiDocumentFile(file: { type: string; size: number }): st
   }
   return null;
 }
+
+// ブラウザの音声認識(SpeechRecognition)が使えない/失敗した場合の録音フォールバック用。
+// MediaRecorderが端末・ブラウザによって生成する形式が異なるため広めに許可する
+// (iPhone Safari: audio/mp4、Chrome/Android: audio/webm が主)。
+export const ALLOWED_AUDIO_MIME_TYPES = [
+  "audio/mp4",
+  "audio/aac",
+  "audio/webm",
+  "audio/ogg",
+  "audio/wav",
+  "audio/mpeg",
+];
+export const MAX_AUDIO_BYTES = 20 * 1024 * 1024; // 20MB(数分程度の音声を想定した上限)
+
+export function validateAudioFile(file: { type: string; size: number }): string | null {
+  // MediaRecorderの出力するmimeTypeにはcodecs指定(例: "audio/webm;codecs=opus")が
+  // 付くことがあるため、前方一致で判定する。
+  const baseType = file.type.split(";")[0].trim();
+  if (!ALLOWED_AUDIO_MIME_TYPES.includes(baseType)) {
+    return "この形式の音声は送信できません。もう一度録音し直すか、テキストで直接入力してください。";
+  }
+  if (file.size <= 0) {
+    return "録音データが空です。もう一度録音してください。";
+  }
+  if (file.size > MAX_AUDIO_BYTES) {
+    return "録音時間が長すぎます(20MBまで)。短く区切って録音してください。";
+  }
+  return null;
+}
