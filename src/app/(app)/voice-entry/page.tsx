@@ -21,9 +21,9 @@ export default async function VoiceEntryPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-bold tracking-tight text-slate-900">話して記録する</h1>
+      <h1 className="text-2xl font-bold tracking-tight text-slate-900">🎤 AIに話す</h1>
       <p className="text-sm text-slate-500">
-        日報・危険予知(KY)・新しい取引先・従業員・見積依頼、どれでも選ばずに話すだけで大丈夫です。内容を見て自動で振り分けます。
+        日報・危険予知(KY)・見積・請求・施工計画・新しい取引先・従業員・見積依頼、どれでも選ばずに話すだけで大丈夫です。内容を見てAIが自動で振り分け、該当する画面へ案内します(AIが勝手に登録を確定することはありません)。
       </p>
       <Card className="max-w-xl">
         <VoiceEntryForm

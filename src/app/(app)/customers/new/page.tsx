@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CustomerForm } from "../CustomerForm";
 import { BusinessCardScanner } from "../BusinessCardScanner";
 import { createCustomerAction, scanCustomerVoiceAction } from "../actions";
@@ -10,6 +11,11 @@ import { VoiceFormFiller } from "@/components/VoiceFormFiller";
 import type { BusinessCardExtraction } from "@/lib/ai";
 
 export default function NewCustomerPage() {
+  // 「AIに話す」窓口から引き継いだ音声認識結果があれば、音声入力タブを開いた状態で
+  // 初期値として入れておく(既存の写真添付・資料添付タブはそのまま)。
+  const searchParams = useSearchParams();
+  const prefillTranscript = searchParams.get("prefillTranscript") ?? undefined;
+
   // 読み取り結果でフォームの初期値を差し替えるため、keyを変えてCustomerFormを
   // 再マウントする(defaultValueのuncontrolled inputへ反映するため)。
   const [scanCount, setScanCount] = useState(0);
@@ -42,6 +48,7 @@ export default function NewCustomerPage() {
 
       <div className="max-w-lg">
         <Tabs
+          initialActive={prefillTranscript ? 2 : 0}
           tabs={[
             {
               label: "📷 写真添付",
@@ -58,6 +65,7 @@ export default function NewCustomerPage() {
                   action={scanCustomerVoiceAction}
                   onExtracted={handleExtracted}
                   placeholder="会社名・担当者・電話番号・メールアドレスなど"
+                  initialTranscript={prefillTranscript}
                 />
               ),
             },

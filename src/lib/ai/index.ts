@@ -537,16 +537,36 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
   };
 }
 
-// ダッシュボードの「何でも音声で話す」窓口が、話した内容を日報・KY(危険予知)・
-// 顧客登録・従業員登録・案件依頼のどれに振り分けるかを判定する。どれとも言い切れない
-// 内容(挨拶のみ・意味不明瞭等)は日報側に倒す(現場で最も使う頻度が高く、間違えても
-// 内容はそのまま確認・修正できるため)。
-export type VoiceIntent = "DAILY_REPORT" | "KY" | "CUSTOMER" | "EMPLOYEE" | "PROJECT_REQUEST";
+// ダッシュボードの「AIに話す」窓口が、話した内容を日報・KY(危険予知)・見積・
+// 請求・施工計画・安全書類・ヒヤリハット・顧客登録・従業員登録・案件依頼のどれに
+// 振り分けるかを判定する。どれとも言い切れない内容(挨拶のみ・意味不明瞭等)は
+// 日報側に倒す(現場で最も使う頻度が高く、間違えても内容はそのまま確認・修正できる
+// ため)。安全書類・ヒヤリハットは現時点では専用の登録画面が無いため、判定結果は
+// 「この内容のようです」という案内までにとどめ、AIが自動で何かを確定させることはしない
+// (呼び出し側のsubmitVoiceEntryAction参照)。
+export type VoiceIntent =
+  | "DAILY_REPORT"
+  | "KY"
+  | "CUSTOMER"
+  | "EMPLOYEE"
+  | "PROJECT_REQUEST"
+  | "ESTIMATE"
+  | "INVOICE"
+  | "CONSTRUCTION_PLAN"
+  | "SAFETY_DOCUMENT"
+  | "NEAR_MISS"
+  | "OTHER";
 
-const KY_INTENT_WORDS = ["危険予知", "ヒヤリハット", "ヒヤリ・ハット", "KY活動", "危険ポイント", "危険予知活動"];
+const KY_INTENT_WORDS = ["危険予知", "KY活動", "危険ポイント", "危険予知活動"];
 const CUSTOMER_INTENT_WORDS = ["顧客登録", "取引先登録", "会社名は", "御中", "名刺"];
 const EMPLOYEE_INTENT_WORDS = ["従業員登録", "作業員登録", "入社", "雇用区分"];
 const PROJECT_REQUEST_INTENT_WORDS = ["見積依頼", "工事依頼", "元請", "発注者"];
+const ESTIMATE_INTENT_WORDS = ["見積書", "見積を作", "単価", "御見積"];
+const INVOICE_INTENT_WORDS = ["請求書", "請求を", "入金", "支払いが"];
+const CONSTRUCTION_PLAN_INTENT_WORDS = ["施工計画", "施工方針", "施工手順"];
+const SAFETY_DOCUMENT_INTENT_WORDS = ["安全書類", "グリーンファイル", "安全教育", "施工体制台帳"];
+// 「ヒヤリハット」は危険予知(これから行う作業の注意点)とは別物(既に起きたヒヤリ)なので独立させる
+const NEAR_MISS_INTENT_WORDS = ["ヒヤリハット", "ヒヤリ・ハット", "ヒヤリとした", "ヒヤッと"];
 
 export async function classifyVoiceIntent(
   rawTextInput: string,
@@ -566,7 +586,12 @@ export async function classifyVoiceIntent(
 }
 
 function mockClassifyVoiceIntent(rawText: string): VoiceIntent {
+  if (NEAR_MISS_INTENT_WORDS.some((w) => rawText.includes(w))) return "NEAR_MISS";
   if (KY_INTENT_WORDS.some((w) => rawText.includes(w))) return "KY";
+  if (SAFETY_DOCUMENT_INTENT_WORDS.some((w) => rawText.includes(w))) return "SAFETY_DOCUMENT";
+  if (CONSTRUCTION_PLAN_INTENT_WORDS.some((w) => rawText.includes(w))) return "CONSTRUCTION_PLAN";
+  if (ESTIMATE_INTENT_WORDS.some((w) => rawText.includes(w))) return "ESTIMATE";
+  if (INVOICE_INTENT_WORDS.some((w) => rawText.includes(w))) return "INVOICE";
   if (CUSTOMER_INTENT_WORDS.some((w) => rawText.includes(w))) return "CUSTOMER";
   if (EMPLOYEE_INTENT_WORDS.some((w) => rawText.includes(w))) return "EMPLOYEE";
   if (PROJECT_REQUEST_INTENT_WORDS.some((w) => rawText.includes(w))) return "PROJECT_REQUEST";
@@ -586,13 +611,31 @@ async function aiClassifyVoiceIntent(
 (説明文は一切不要です)。
 - DAILY_REPORT: その日の作業内容・作業員数・使用機械・時間・天候などを報告する内容(作業日報)
 - KY: これから行う作業の危険ポイント・注意点を予知する内容(危険予知活動、KY活動)
+- NEAR_MISS: 実際にヒヤリとした・危なかった出来事の報告(ヒヤリハット。KYとは別物)
 - CUSTOMER: 取引先(会社・担当者)を新しく登録するための情報(会社名・担当者名・電話番号等)
 - EMPLOYEE: 自社の従業員を新しく登録するための情報(氏名・役職・入社日等)
 - PROJECT_REQUEST: 元請や発注者から届いた見積依頼・工事依頼の内容(現場住所・工期・工事内容等)
+- ESTIMATE: 自社が発行する見積書の作成に関する内容(工事内容・数量など)
+- INVOICE: 請求書の発行・入金に関する内容
+- CONSTRUCTION_PLAN: 施工計画・施工方針・施工手順に関する内容
+- SAFETY_DOCUMENT: 安全書類(グリーンファイル・安全教育記録等)の提出・作成に関する内容
+- OTHER: 上記のどれにも当てはまらない内容
 判断に迷う場合は必ず DAILY_REPORT としてください。`;
 
   const raw = (await callAnthropic(system, rawText, usageContext)).trim();
-  const valid: VoiceIntent[] = ["KY", "CUSTOMER", "EMPLOYEE", "PROJECT_REQUEST", "DAILY_REPORT"];
+  const valid: VoiceIntent[] = [
+    "NEAR_MISS",
+    "KY",
+    "CUSTOMER",
+    "EMPLOYEE",
+    "PROJECT_REQUEST",
+    "ESTIMATE",
+    "INVOICE",
+    "CONSTRUCTION_PLAN",
+    "SAFETY_DOCUMENT",
+    "OTHER",
+    "DAILY_REPORT",
+  ];
   return valid.find((v) => raw.includes(v)) ?? "DAILY_REPORT";
 }
 

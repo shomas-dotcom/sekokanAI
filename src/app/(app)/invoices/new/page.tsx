@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { NewInvoiceForm } from "./NewInvoiceForm";
 import { Card } from "@/components/ui";
 
-export default async function NewInvoicePage() {
+export default async function NewInvoicePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ voiceNote?: string }>;
+}) {
+  const { voiceNote } = await searchParams;
   const user = await requireUser();
 
   const [projects, contracts] = await Promise.all([
@@ -34,6 +39,12 @@ export default async function NewInvoicePage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-bold tracking-tight text-slate-900">請求書を作成</h1>
+      {voiceNote && (
+        <Card className="max-w-lg border-indigo-200 bg-indigo-50/50">
+          <p className="text-sm font-medium text-indigo-800">🎤「AIに話す」で話した内容(参考。自動入力はされません)</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{voiceNote}</p>
+        </Card>
+      )}
       <Card className="max-w-lg">
         <NewInvoiceForm
           projects={projects.map((p) => ({ id: p.id, label: `${p.customer.name} / ${p.name}` }))}

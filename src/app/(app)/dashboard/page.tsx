@@ -170,7 +170,7 @@ export default async function DashboardPage() {
         className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 px-6 py-5 text-xl font-bold text-white shadow-lg shadow-indigo-600/30 transition hover:scale-[1.01]"
       >
         <span className="text-3xl">🎤</span>
-        話して記録する
+        AIに話す
       </Link>
 
       <div>

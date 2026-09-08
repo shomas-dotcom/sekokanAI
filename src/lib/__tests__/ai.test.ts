@@ -155,6 +155,30 @@ describe("classifyVoiceIntent (モック実装、ダッシュボードの音声�
       "PROJECT_REQUEST"
     );
   });
+
+  it("ヒヤリハットの報告はKYではなくNEAR_MISSと判定する(危険予知とは別物)", async () => {
+    expect(await classifyVoiceIntent("さっき現場でヒヤリハットがありました。足場から資材が落ちかけました。")).toBe(
+      "NEAR_MISS"
+    );
+  });
+
+  it("自社の見積書作成に関する内容はESTIMATEと判定する", async () => {
+    expect(await classifyVoiceIntent("〇〇工務店さんの見積書を作りたい。")).toBe("ESTIMATE");
+  });
+
+  it("請求書に関する内容はINVOICEと判定する", async () => {
+    expect(await classifyVoiceIntent("請求書を発行してください。入金の確認もお願いします。")).toBe("INVOICE");
+  });
+
+  it("施工計画に関する内容はCONSTRUCTION_PLANと判定する", async () => {
+    expect(await classifyVoiceIntent("施工計画の施工方針をまとめたい。")).toBe("CONSTRUCTION_PLAN");
+  });
+
+  it("安全書類に関する内容はSAFETY_DOCUMENTと判定する", async () => {
+    expect(await classifyVoiceIntent("安全書類のグリーンファイルを提出しないといけない。")).toBe(
+      "SAFETY_DOCUMENT"
+    );
+  });
 });
 
 describe("AI関数の異常系入力(空文字・記号のみ等でも例外を投げない)", () => {

@@ -6,7 +6,14 @@ import { Input, Select, Textarea, Button, FieldLabel } from "@/components/ui";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 import { Tabs } from "@/components/Tabs";
 
-export function NewQuoteForm({ projects }: { projects: { id: string; label: string }[] }) {
+export function NewQuoteForm({
+  projects,
+  prefillTranscript,
+}: {
+  projects: { id: string; label: string }[];
+  /** 「AIに話す」窓口から引き継いだ音声認識結果があれば、工事内容欄の初期値にする */
+  prefillTranscript?: string;
+}) {
   const [state, formAction, pending] = useActionState(createQuoteAction, undefined);
   const freeTextRef = useRef<HTMLTextAreaElement>(null);
 
@@ -44,6 +51,7 @@ export function NewQuoteForm({ projects }: { projects: { id: string; label: stri
                     ref={freeTextRef}
                     name="freeText"
                     rows={4}
+                    defaultValue={prefillTranscript}
                     placeholder={"例:\n掘削工\n残土処分\nL型側溝設置"}
                   />
                   <span className="text-xs text-slate-400">

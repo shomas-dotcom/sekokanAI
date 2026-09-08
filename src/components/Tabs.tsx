@@ -8,8 +8,15 @@ import { useState } from "react";
  * 受け渡しはNext.jsのApp Routerで許可されている)。切り替えは表示/非表示のみで、
  * 中身自体は最初から全てレンダリングしておく(タブ切替のたびに再取得しない)。
  */
-export function Tabs({ tabs }: { tabs: { label: string; content: React.ReactNode }[] }) {
-  const [active, setActive] = useState(0);
+export function Tabs({
+  tabs,
+  initialActive = 0,
+}: {
+  tabs: { label: string; content: React.ReactNode }[];
+  /** 他の画面から引き継いだ内容がある場合等、最初に開くタブを指定する(既定は先頭) */
+  initialActive?: number;
+}) {
+  const [active, setActive] = useState(initialActive);
 
   return (
     <div className="flex flex-col gap-4">

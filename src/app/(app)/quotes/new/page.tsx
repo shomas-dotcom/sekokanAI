@@ -6,7 +6,12 @@ import { NewQuoteForm } from "./NewQuoteForm";
 import { Card } from "@/components/ui";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 
-export default async function NewQuotePage() {
+export default async function NewQuotePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ prefillTranscript?: string }>;
+}) {
+  const { prefillTranscript } = await searchParams;
   const user = await requireUser();
 
   if (!isPremium(user.company)) {
@@ -45,6 +50,7 @@ export default async function NewQuotePage() {
             id: p.id,
             label: `${p.customer.name} / ${p.name}`,
           }))}
+          prefillTranscript={prefillTranscript}
         />
       </Card>
     </div>

@@ -76,6 +76,9 @@ export function VoiceEntryForm({
       {state?.error && (
         <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
       )}
+      {state?.notice && (
+        <p className="rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-800">{state.notice}</p>
+      )}
 
       <Button type="submit" disabled={pending || !hasText} className="py-4 text-lg">
         {pending ? "AIが振り分け中..." : "③ 送信する"}

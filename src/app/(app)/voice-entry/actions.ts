@@ -4,26 +4,27 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { nextDocumentNumber } from "@/lib/numbering";
-import {
-  classifyVoiceIntent,
-  extractCustomerFieldsFromText,
-  extractEmployeeFieldsFromText,
-  extractProjectRequestFromText,
-} from "@/lib/ai";
+import { classifyVoiceIntent } from "@/lib/ai";
 import { createDailyReportAction } from "../daily-reports/actions";
 import { createKyActivityAction } from "../ky/actions";
 
-export type VoiceEntryFormState = { error?: string } | undefined;
+export type VoiceEntryFormState = { error?: string; notice?: string } | undefined;
 
 /**
- * ダッシュボードの「話して記録する」窓口。ベテラン・年配の方でも迷わないよう、
- * 「日報・KY・顧客登録・従業員登録・案件依頼」のどれかを選ばせず、話した内容から
- * AIが自動で振り分ける(判定方法は @/lib/ai の classifyVoiceIntent 参照)。
+ * ダッシュボードの「AIに話す」窓口(音声AIルーターのMVP)。ベテラン・年配の方でも
+ * 迷わないよう、「日報・KY・見積・請求・施工計画・顧客登録・従業員登録・案件依頼」の
+ * どれかを選ばせず、話した内容からAIが自動で振り分ける(判定方法は @/lib/ai の
+ * classifyVoiceIntent 参照)。
  *
- * 日報・KYは現場(project)に紐づくため現場の選択が必須。顧客・従業員・案件依頼は
- * 現場を選ばなくても登録できるため、分類が判明してから初めて現場の要否を判定する
- * (先に現場選択を必須にすると、顧客登録したいだけの人が無駄な手順を踏むことになるため)。
+ * 重要: AIは「これは○○の内容のようです」と判定するだけで、AI自身が顧客・案件・
+ * 見積等をこの場で確定・登録することはしない。判定後は必ず各機能の登録画面
+ * (すでに写真添付・資料添付・音声入力タブや確認欄を備えている画面)へ、話した
+ * 内容を引き継いだ状態で遷移し、そこで人が内容を確認してから登録する。
+ * これはコード変更(2026-09追記)で、以前はCUSTOMER/EMPLOYEE/PROJECT_REQUESTを
+ * この場で直接DBへ作成していたが、確認なしでの確定を避けるため廃止した。
+ *
+ * 日報・KYのみ、この場で作成する(現場ごとの実績記録という性質上、既存の登録画面
+ * 同様「送信した時点で保存され、その後の詳細画面で内容を直せる」形を踏襲する)。
  */
 export async function submitVoiceEntryAction(
   _prevState: VoiceEntryFormState,
@@ -40,6 +41,7 @@ export async function submitVoiceEntryAction(
     userId: user.id,
     feature: "voiceEntry.classifyIntent",
   });
+  await logAction({ companyId: user.companyId, userId: user.id, action: `voiceEntry.classify:${intent}` });
   const today = new Date().toISOString().slice(0, 10);
 
   if (intent === "KY" || intent === "DAILY_REPORT") {
@@ -68,110 +70,44 @@ export async function submitVoiceEntryAction(
     return createDailyReportAction(undefined, fd);
   }
 
+  // 以下はいずれも、この場では何も登録せず、話した内容を引き継いだ状態で
+  // 該当する登録画面(そこで内容を確認してから登録する)へ遷移するだけ。
   if (intent === "CUSTOMER") {
-    const extraction = await extractCustomerFieldsFromText(transcript, {
-      companyId: user.companyId,
-      userId: user.id,
-      feature: "voiceEntry.extractCustomer",
-    });
-    const customer = await prisma.customer.create({
-      data: {
-        companyId: user.companyId,
-        name: extraction.companyName ?? "(名称未確認・要編集)",
-        contactName: extraction.personName,
-        position: extraction.position,
-        department: extraction.department,
-        postalCode: extraction.postalCode,
-        phone: extraction.phone,
-        mobilePhone: extraction.mobilePhone,
-        fax: extraction.fax,
-        email: extraction.email,
-        websiteUrl: extraction.companyUrl,
-        address: extraction.address,
-        notes: extraction.notes,
-      },
-    });
-    await logAction({
-      companyId: user.companyId,
-      userId: user.id,
-      action: "customer.createFromVoice",
-      targetType: "Customer",
-      targetId: customer.id,
-    });
-    redirect(`/customers/${customer.id}`);
+    redirect(`/customers/new?prefillTranscript=${encodeURIComponent(transcript)}`);
   }
-
   if (intent === "EMPLOYEE") {
-    const extraction = await extractEmployeeFieldsFromText(transcript, {
-      companyId: user.companyId,
-      userId: user.id,
-      feature: "voiceEntry.extractEmployee",
-    });
-    const employee = await prisma.employee.create({
-      data: {
-        companyId: user.companyId,
-        name: extraction.name ?? "(氏名未確認・要編集)",
-        nameKana: extraction.nameKana,
-        position: extraction.position,
-        email: extraction.email,
-        phone: extraction.phone,
-        notes: extraction.notes,
-      },
-    });
-    await logAction({
-      companyId: user.companyId,
-      userId: user.id,
-      action: "employee.createFromVoice",
-      targetType: "Employee",
-      targetId: employee.id,
-    });
-    redirect(`/employees/${employee.id}`);
+    redirect(`/employees/new?prefillTranscript=${encodeURIComponent(transcript)}`);
   }
-
-  // intent === "PROJECT_REQUEST"
-  const extraction = await extractProjectRequestFromText(transcript, {
-    companyId: user.companyId,
-    userId: user.id,
-    feature: "voiceEntry.extractProjectRequest",
-  });
-  const matchedCustomer = extraction.customerName
-    ? await prisma.customer.findFirst({
-        where: { companyId: user.companyId, name: { contains: extraction.customerName, mode: "insensitive" } },
-      })
-    : null;
-
-  if (!matchedCustomer) {
-    // 顧客が一致しないと案件を作れない(Project.customerIdは必須)。案件登録画面へ
-    // 読み取り済みの内容を引き継ぎ、顧客だけ手動で選択・登録してもらう。
+  if (intent === "PROJECT_REQUEST") {
     redirect(`/projects/new?prefillTranscript=${encodeURIComponent(transcript)}`);
   }
+  if (intent === "ESTIMATE") {
+    redirect(`/quotes/new?prefillTranscript=${encodeURIComponent(transcript)}`);
+  }
+  if (intent === "INVOICE") {
+    redirect(`/invoices/new?voiceNote=${encodeURIComponent(transcript)}`);
+  }
+  if (intent === "CONSTRUCTION_PLAN") {
+    redirect(`/construction-plans/new?voiceNote=${encodeURIComponent(transcript)}`);
+  }
 
-  const projectCode = await nextDocumentNumber(user.companyId, "PROJECT");
-  const project = await prisma.project.create({
-    data: {
-      companyId: user.companyId,
-      customerId: matchedCustomer.id,
-      projectCode,
-      name: extraction.projectName ?? "(案件名未確認・要編集)",
-      siteAddress: extraction.siteAddress,
-      primeContractorName: extraction.primeContractorName,
-      overview: [extraction.workContent, extraction.quantity].filter(Boolean).join("\n") || null,
-      startDate: extraction.startDate ? new Date(extraction.startDate) : null,
-      endDate: extraction.endDate ? new Date(extraction.endDate) : null,
-      contactName: extraction.contactName,
-      contactPhone: extraction.contactPhone,
-      castingDate: extraction.castingDate ? new Date(extraction.castingDate) : null,
-      suppliedItems: extraction.suppliedItems,
-      soilQuantity: extraction.soilQuantity,
-      cautions: extraction.cautions,
-    },
-  });
-  await logAction({
-    companyId: user.companyId,
-    userId: user.id,
-    action: "project.createFromVoice",
-    targetType: "Project",
-    targetId: project.id,
-  });
-  redirect(`/projects/${project.id}`);
+  // SAFETY_DOCUMENT・NEAR_MISSはまだ専用の登録画面が無く、OTHERはどれにも
+  // 当てはまらなかった内容のため、AIが何かを勝手に作ることはせず、判定結果を
+  // そのまま伝えて人に判断してもらう(架空の機能へ誘導しない)。
+  if (intent === "SAFETY_DOCUMENT") {
+    return {
+      notice:
+        "安全書類に関する内容のようです。この機能はまだ準備中のため自動では登録できません。話した内容は上の欄に残っていますので、コピーしてご利用ください。",
+    };
+  }
+  if (intent === "NEAR_MISS") {
+    return {
+      notice:
+        "ヒヤリハットの報告のようです。専用の登録画面はまだ準備中です。危険予知(KY)画面や日報の注意事項欄への記録をご検討ください。",
+    };
+  }
+  return {
+    notice:
+      "内容をうまく判定できませんでした。日報・KY・見積・請求・施工計画・顧客登録・従業員登録・案件依頼のいずれかであれば、該当する画面から直接入力してください。",
+  };
 }

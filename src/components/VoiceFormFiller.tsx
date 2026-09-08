@@ -15,10 +15,13 @@ export function VoiceFormFiller<T>({
   action,
   onExtracted,
   placeholder,
+  initialTranscript,
 }: {
   action: (state: VoiceFillState<T>, formData: FormData) => Promise<VoiceFillState<T>>;
   onExtracted: (extraction: T) => void;
   placeholder?: string;
+  /** 「AIに話す」窓口等、他の画面から引き継いだ音声認識結果があれば初期値として入れておく */
+  initialTranscript?: string;
 }) {
   const [state, formAction, pending] = useActionState<VoiceFillState<T>, FormData>(
     async (prevState, formData) => {
@@ -29,7 +32,7 @@ export function VoiceFormFiller<T>({
     undefined
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [hasText, setHasText] = useState(false);
+  const [hasText, setHasText] = useState(Boolean(initialTranscript?.trim()));
 
   return (
     <form
@@ -52,6 +55,7 @@ export function VoiceFormFiller<T>({
         ref={textareaRef}
         name="transcript"
         rows={3}
+        defaultValue={initialTranscript}
         onChange={(e) => setHasText(e.target.value.trim().length > 0)}
         placeholder="マイクで話すか、直接入力してください"
       />

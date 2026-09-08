@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { EmployeeForm } from "../EmployeeForm";
 import { IdCardScanner } from "../IdCardScanner";
 import { createEmployeeAction, scanEmployeeVoiceAction } from "../actions";
@@ -10,6 +11,11 @@ import { VoiceFormFiller } from "@/components/VoiceFormFiller";
 import type { EmployeeFieldExtraction, IdCardExtraction } from "@/lib/ai";
 
 export default function NewEmployeePage() {
+  // 「AIに話す」窓口から引き継いだ音声認識結果があれば、音声入力タブを開いた状態で
+  // 初期値として入れておく。
+  const searchParams = useSearchParams();
+  const prefillTranscript = searchParams.get("prefillTranscript") ?? undefined;
+
   // 読み取り結果でフォームの初期値を差し替えるため、keyを変えて
   // EmployeeFormを再マウントする(defaultValueのuncontrolled inputへ反映するため)。
   const [scanCount, setScanCount] = useState(0);
@@ -51,6 +57,7 @@ export default function NewEmployeePage() {
 
       <div className="max-w-lg">
         <Tabs
+          initialActive={prefillTranscript ? 2 : 0}
           tabs={[
             {
               label: "📷 写真添付",
@@ -67,6 +74,7 @@ export default function NewEmployeePage() {
                   action={scanEmployeeVoiceAction}
                   onExtracted={handleVoiceExtracted}
                   placeholder="氏名・役職・電話番号など"
+                  initialTranscript={prefillTranscript}
                 />
               ),
             },
