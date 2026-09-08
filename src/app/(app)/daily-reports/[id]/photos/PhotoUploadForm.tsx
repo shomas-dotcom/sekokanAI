@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
-import { uploadPhotoAction } from "./actions";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { uploadPhotoAction, suggestPhotoMetadataAction } from "./actions";
 import { Button } from "@/components/ui";
 
 const PHASE_LABELS: Record<string, string> = {
@@ -13,7 +13,9 @@ const PHASE_LABELS: Record<string, string> = {
 /**
  * 写真アップロードフォーム。EXIFのDateTimeOriginalをクライアント側(exifr)で抽出し、
  * hidden inputで渡す(取得できなければサーバー側でアップロード時刻にフォールバックする)。
- * 施工前/中/後はAI自動判定ではなく手動選択(既存写真の枚数から初期値のみ提案する)。
+ * 施工前/中/後・コメントは、「AIに提案してもらう」ボタンでAIに仮の値を出させることも
+ * できるが、そのままでは保存されない(このフォームの値としてユーザーが確認・修正してから
+ * 「写真を追加」を押した時点で初めて保存される。REQUIREMENTS.mdの「AIは仮入力、確定は人」)。
  */
 export function PhotoUploadForm({
   dailyReportId,
@@ -23,10 +25,30 @@ export function PhotoUploadForm({
   existingPhotoCount: number;
 }) {
   const [state, formAction, pending] = useActionState(uploadPhotoAction, undefined);
+  const [suggestState, suggestFormAction, suggestPending] = useActionState(
+    suggestPhotoMetadataAction,
+    undefined
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const takenAtRef = useRef<HTMLInputElement>(null);
+  const captionRef = useRef<HTMLInputElement>(null);
+  const phaseRefs = useRef<Partial<Record<string, HTMLInputElement | null>>>({});
   const [preview, setPreview] = useState<string | null>(null);
   const defaultPhase = existingPhotoCount === 0 ? "BEFORE" : "DURING";
+
+  // AIの提案が届いたら、フォームの値を書き換える(あくまで仮入力。保存前に必ず
+  // 目で見て直せるよう、ラジオボタン・テキスト欄はこの後も自由に変更できる)。
+  useEffect(() => {
+    if (!suggestState?.suggestion) return;
+    const { phase, caption } = suggestState.suggestion;
+    if (phase !== "UNKNOWN") {
+      const target = phaseRefs.current[phase];
+      if (target) target.checked = true;
+    }
+    if (caption && captionRef.current) {
+      captionRef.current.value = caption;
+    }
+  }, [suggestState]);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -71,19 +93,46 @@ export function PhotoUploadForm({
         <img src={preview} alt="プレビュー" className="h-32 w-32 rounded-lg object-cover" />
       )}
 
+      {preview && (
+        <Button
+          type="submit"
+          formAction={suggestFormAction}
+          variant="ai"
+          disabled={suggestPending}
+          className="w-fit"
+        >
+          {suggestPending ? "AIが確認中..." : "🤖 AIに提案してもらう(施工前/中/後・コメント)"}
+        </Button>
+      )}
+      {suggestState?.error && <p className="text-sm text-rose-700">{suggestState.error}</p>}
+      {suggestState?.suggestion && (
+        <p className="text-xs text-indigo-700">
+          AIの提案を反映しました。内容を確認し、違っていれば下で直してください。
+        </p>
+      )}
+
       <div className="flex gap-3 text-sm">
         {(["BEFORE", "DURING", "AFTER"] as const).map((phase) => (
           <label key={phase} className="flex items-center gap-1.5">
-            <input type="radio" name="phase" value={phase} defaultChecked={phase === defaultPhase} />
+            <input
+              type="radio"
+              name="phase"
+              value={phase}
+              defaultChecked={phase === defaultPhase}
+              ref={(el) => {
+                phaseRefs.current[phase] = el;
+              }}
+            />
             {PHASE_LABELS[phase]}
           </label>
         ))}
       </div>
 
       <input
+        ref={captionRef}
         type="text"
         name="caption"
-        placeholder="コメント(任意)"
+        placeholder="コメント(任意。AIに提案してもらうこともできます)"
         className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
       />
 

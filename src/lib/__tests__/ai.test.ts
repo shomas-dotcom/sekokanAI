@@ -11,6 +11,7 @@ import {
   extractProjectRequestFromText,
   extractProjectRequestFromImage,
   extractIdCardFromImage,
+  suggestPhotoMetadataFromImage,
   analyzeAiIntakeFromText,
   analyzeAiIntakeFromImage,
 } from "@/lib/ai";
@@ -229,6 +230,13 @@ describe("AI関数の異常系入力(空文字・記号のみ等でも例外を�
     expect(result.name).toBeNull();
     expect(result.dateOfBirth).toBeNull();
   });
+
+  it("suggestPhotoMetadataFromImageはAI未設定時、それらしい偽データを作らずunavailableを返す", async () => {
+    const result = await suggestPhotoMetadataFromImage("dGVzdA==", "image/jpeg");
+    expect(result.confidence).toBe("unavailable");
+    expect(result.phase).toBe("UNKNOWN");
+    expect(result.caption).toBeNull();
+  });
 });
 
 describe("AI_API_KEY設定時(本物のAI呼び出しモード、fetchはモック化する)", () => {
@@ -446,6 +454,42 @@ describe("AI_API_KEY設定時(本物のAI呼び出しモード、fetchはモッ�
     expect(result.customer?.companyName).toBe("若葉産業株式会社");
     expect(result.project).toBeNull();
     expect(result.confidence).toBe("high");
+  });
+
+  it("suggestPhotoMetadataFromImageはAI設定時、施工段階とコメントの提案を返す", async () => {
+    process.env.AI_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockAnthropicResponse(JSON.stringify({ phase: "DURING", caption: "側溝の掘削作業" }))
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await suggestPhotoMetadataFromImage("dGVzdA==", "image/jpeg");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.phase).toBe("DURING");
+    expect(result.caption).toBe("側溝の掘削作業");
+    expect(result.confidence).toBe("high");
+  });
+
+  it("suggestPhotoMetadataFromImageは判定できない場合、断定せずUNKNOWN/nullのまま要確認として返す", async () => {
+    process.env.AI_API_KEY = "test-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(mockAnthropicResponse(JSON.stringify({ phase: "UNKNOWN", caption: null })))
+    );
+
+    const result = await suggestPhotoMetadataFromImage("dGVzdA==", "image/jpeg");
+    expect(result.phase).toBe("UNKNOWN");
+    expect(result.caption).toBeNull();
+    expect(result.confidence).toBe("needs_review");
+  });
+
+  it("suggestPhotoMetadataFromImageはAI呼び出しが失敗してもエラーを投げず、unavailableとして返す", async () => {
+    process.env.AI_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockAnthropicResponse("", false)));
+
+    const result = await suggestPhotoMetadataFromImage("dGVzdA==", "image/jpeg");
+    expect(result.confidence).toBe("unavailable");
   });
 });
 

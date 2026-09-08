@@ -725,6 +725,65 @@ export async function extractBusinessCardFromPdf(base64Pdf: string): Promise<Bus
   }
 }
 
+// 現場写真の「施工前/中/後」「コメント」のAI提案(日報の写真帳機能用)。
+// あくまで提案であり、アップロード時にユーザーが確認・修正してから保存する
+// (uploadPhotoActionは従来どおりユーザーが選んだ値をそのまま保存する。ここでは
+// フォームへの仮入力に使う値を返すだけで、DBへの直接書き込みはしない)。
+export type PhotoMetadataExtraction = {
+  phase: "BEFORE" | "DURING" | "AFTER" | "UNKNOWN";
+  caption: string | null;
+  confidence: "high" | "needs_review" | "unavailable";
+};
+
+const PHOTO_METADATA_SYSTEM = `あなたは建設現場の写真を確認する事務担当者を補助するアシスタントです。
+渡された写真を見て、次の2つだけを判定してください。
+1. phase: この写真が「施工前」「施工中」「施工後」のどれに近いか。判断がつかない場合はUNKNOWNにしてください。
+2. caption: 写真に写っている作業内容を20文字程度の日本語で一言にしてください。判断できない場合はnullにしてください。
+金額の見積もり・安全性の良し悪し・工事の完成度の評価はしないでください。写真から読み取れないことは書かないでください。
+必ずJSONオブジェクトのみを出力してください。形式: {"phase": "BEFORE"|"DURING"|"AFTER"|"UNKNOWN", "caption": string|null}`;
+
+const VALID_PHOTO_PHASES = ["BEFORE", "DURING", "AFTER", "UNKNOWN"] as const;
+
+function parsePhotoMetadataJson(raw: string): PhotoMetadataExtraction {
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+
+  const phaseRaw = typeof parsed.phase === "string" ? parsed.phase.toUpperCase() : "UNKNOWN";
+  const phase = (VALID_PHOTO_PHASES as readonly string[]).includes(phaseRaw)
+    ? (phaseRaw as PhotoMetadataExtraction["phase"])
+    : "UNKNOWN";
+  const caption = typeof parsed.caption === "string" && parsed.caption.trim() ? parsed.caption.trim() : null;
+
+  // 施工段階・コメントのどちらも読み取れなかった場合は「要確認」を強く伝える
+  const confidence: PhotoMetadataExtraction["confidence"] =
+    phase !== "UNKNOWN" && caption ? "high" : "needs_review";
+
+  return { phase, caption, confidence };
+}
+
+export async function suggestPhotoMetadataFromImage(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp"
+): Promise<PhotoMetadataExtraction> {
+  if (isMockMode()) {
+    // 写真の中身を判定する処理は本物の画像認識AIが無いと精度を出せないため、
+    // 名刺・身分証読み取りと同じ方針で「不明」を正直に返す(それらしい値を作らない)。
+    return { phase: "UNKNOWN", caption: null, confidence: "unavailable" };
+  }
+  try {
+    const raw = await callAnthropicVision(
+      PHOTO_METADATA_SYSTEM,
+      base64Image,
+      mediaType,
+      "この現場写真を確認してください。"
+    );
+    return parsePhotoMetadataJson(raw);
+  } catch (err) {
+    console.error("[ai] suggestPhotoMetadataFromImage: failed", err);
+    return { phase: "UNKNOWN", caption: null, confidence: "unavailable" };
+  }
+}
+
 // 電話・メールアドレスは正規表現だけでも十分実用的に取れるため、名刺OCRと違い
 // AI未設定時でもルールベースのモックで代用する(REQUIREMENTS.mdの
 // 「単価等それ自体を推測で作らない」対象ではなく、単なる書式抽出のため)。

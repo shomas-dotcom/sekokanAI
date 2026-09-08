@@ -31,9 +31,9 @@ const TOOLS: Tool[] = [
   {
     emoji: "📷",
     name: "AI写真帳作成",
-    description: "現場写真の整理・帳票化(準備中)",
+    description: "写真を選ぶと、施工前/中/後とコメントをAIが提案(日報の写真欄)",
     href: "/daily-reports",
-    status: "coming_soon",
+    status: "available",
   },
   {
     emoji: "📐",
