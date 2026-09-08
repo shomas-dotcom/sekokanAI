@@ -35,7 +35,11 @@ export async function submitVoiceEntryAction(
 
   if (!transcript) return { error: "マイクで話すか、内容を入力してください。" };
 
-  const intent = await classifyVoiceIntent(transcript);
+  const intent = await classifyVoiceIntent(transcript, {
+    companyId: user.companyId,
+    userId: user.id,
+    feature: "voiceEntry.classifyIntent",
+  });
   const today = new Date().toISOString().slice(0, 10);
 
   if (intent === "KY" || intent === "DAILY_REPORT") {
@@ -65,7 +69,11 @@ export async function submitVoiceEntryAction(
   }
 
   if (intent === "CUSTOMER") {
-    const extraction = await extractCustomerFieldsFromText(transcript);
+    const extraction = await extractCustomerFieldsFromText(transcript, {
+      companyId: user.companyId,
+      userId: user.id,
+      feature: "voiceEntry.extractCustomer",
+    });
     const customer = await prisma.customer.create({
       data: {
         companyId: user.companyId,
@@ -94,7 +102,11 @@ export async function submitVoiceEntryAction(
   }
 
   if (intent === "EMPLOYEE") {
-    const extraction = await extractEmployeeFieldsFromText(transcript);
+    const extraction = await extractEmployeeFieldsFromText(transcript, {
+      companyId: user.companyId,
+      userId: user.id,
+      feature: "voiceEntry.extractEmployee",
+    });
     const employee = await prisma.employee.create({
       data: {
         companyId: user.companyId,
@@ -117,7 +129,11 @@ export async function submitVoiceEntryAction(
   }
 
   // intent === "PROJECT_REQUEST"
-  const extraction = await extractProjectRequestFromText(transcript);
+  const extraction = await extractProjectRequestFromText(transcript, {
+    companyId: user.companyId,
+    userId: user.id,
+    feature: "voiceEntry.extractProjectRequest",
+  });
   const matchedCustomer = extraction.customerName
     ? await prisma.customer.findFirst({
         where: { companyId: user.companyId, name: { contains: extraction.customerName, mode: "insensitive" } },

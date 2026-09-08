@@ -1,22 +1,34 @@
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui";
+import { daysAgo } from "@/lib/dateRange";
 
 export default async function AdminDashboardPage() {
-  const [companyCount, premiumCount, suspendedCount, userCount, recentAdminActions, payingCompanies] =
-    await Promise.all([
-      prisma.company.count(),
-      prisma.company.count({ where: { plan: "PREMIUM" } }),
-      prisma.company.count({ where: { isSuspended: true } }),
-      prisma.user.count({ where: { deletedAt: null } }),
-      prisma.platformAdminAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
-      // MRR(月間経常収益)は「実際に課金状態(プレミアム)かつ、料金プランが割り当て済み」の
-      // 会社だけを対象に、そのプランの月額を合計して出す。捏造した数字を出さないため、
-      // どちらか一方でも欠けている会社は合計に含めない。
-      prisma.company.findMany({
-        where: { plan: "PREMIUM", pricingPlanId: { not: null } },
-        select: { pricingPlan: { select: { monthlyPrice: true } } },
-      }),
-    ]);
+  const thirtyDaysAgo = daysAgo(30);
+  const [
+    companyCount,
+    premiumCount,
+    suspendedCount,
+    userCount,
+    recentAdminActions,
+    payingCompanies,
+    aiUsageRecent30d,
+    aiUsageFailures30d,
+  ] = await Promise.all([
+    prisma.company.count(),
+    prisma.company.count({ where: { plan: "PREMIUM" } }),
+    prisma.company.count({ where: { isSuspended: true } }),
+    prisma.user.count({ where: { deletedAt: null } }),
+    prisma.platformAdminAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
+    // MRR(月間経常収益)は「実際に課金状態(プレミアム)かつ、料金プランが割り当て済み」の
+    // 会社だけを対象に、そのプランの月額を合計して出す。捏造した数字を出さないため、
+    // どちらか一方でも欠けている会社は合計に含めない。
+    prisma.company.findMany({
+      where: { plan: "PREMIUM", pricingPlanId: { not: null } },
+      select: { pricingPlan: { select: { monthlyPrice: true } } },
+    }),
+    prisma.aiUsageLog.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.aiUsageLog.count({ where: { createdAt: { gte: thirtyDaysAgo }, success: false } }),
+  ]);
 
   const mrr = payingCompanies.reduce((sum, c) => sum + (c.pricingPlan?.monthlyPrice ?? 0), 0);
   const arr = mrr * 12;
@@ -29,6 +41,8 @@ export default async function AdminDashboardPage() {
     { label: "利用ユーザー数(退会除く)", value: userCount },
     { label: "MRR(月間経常収益)", value: `${mrr.toLocaleString()}円` },
     { label: "ARR(年間換算)", value: `${arr.toLocaleString()}円` },
+    { label: "AI実行回数(全社・直近30日)", value: aiUsageRecent30d },
+    { label: "AI失敗回数(全社・直近30日)", value: aiUsageFailures30d },
   ];
 
   return (

@@ -33,7 +33,13 @@ export async function createDailyReportAction(
   });
   if (!project) return { error: "案件が見つかりません。" };
 
-  const draft = rawVoiceInput ? await draftDailyReportFromText(rawVoiceInput) : null;
+  const draft = rawVoiceInput
+    ? await draftDailyReportFromText(rawVoiceInput, {
+        companyId: user.companyId,
+        userId: user.id,
+        feature: "dailyReport.draft",
+      })
+    : null;
 
   const report = await prisma.dailyReport.create({
     data: {

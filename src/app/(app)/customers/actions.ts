@@ -59,10 +59,15 @@ export async function scanBusinessCardAction(
   const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
 
+  const usageContext = { companyId: user.companyId, userId: user.id, feature: "businessCard.scan" };
   const extraction =
     file.type === "application/pdf"
-      ? await extractBusinessCardFromPdf(base64)
-      : await extractBusinessCardFromImage(base64, file.type as "image/jpeg" | "image/png" | "image/webp");
+      ? await extractBusinessCardFromPdf(base64, usageContext)
+      : await extractBusinessCardFromImage(
+          base64,
+          file.type as "image/jpeg" | "image/png" | "image/webp",
+          usageContext
+        );
 
   if (extraction.confidence === "unavailable") {
     return {
@@ -176,10 +181,14 @@ export async function scanCustomerVoiceAction(
   _prevState: CustomerVoiceFillState,
   formData: FormData
 ): Promise<CustomerVoiceFillState> {
-  await requireUser();
+  const user = await requireUser();
   const transcript = String(formData.get("transcript") ?? "").trim();
   if (!transcript) return { error: "マイクで話すか、内容を入力してください。" };
 
-  const extraction = await extractCustomerFieldsFromText(transcript);
+  const extraction = await extractCustomerFieldsFromText(transcript, {
+    companyId: user.companyId,
+    userId: user.id,
+    feature: "customer.voiceExtract",
+  });
   return { extraction };
 }

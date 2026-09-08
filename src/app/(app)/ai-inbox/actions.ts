@@ -39,6 +39,7 @@ export async function submitAiIntakeAction(
 
   let result: AiIntakeResult;
   let sourceSummary: string;
+  const usageContext = { companyId: user.companyId, userId: user.id, feature: "aiInbox.analyze" };
 
   if (file instanceof File && file.size > 0) {
     const validationError = validateAiDocumentFile(file);
@@ -48,11 +49,15 @@ export async function submitAiIntakeAction(
     const base64 = buffer.toString("base64");
     result =
       file.type === "application/pdf"
-        ? await analyzeAiIntakeFromPdf(base64)
-        : await analyzeAiIntakeFromImage(base64, file.type as "image/jpeg" | "image/png" | "image/webp");
+        ? await analyzeAiIntakeFromPdf(base64, usageContext)
+        : await analyzeAiIntakeFromImage(
+            base64,
+            file.type as "image/jpeg" | "image/png" | "image/webp",
+            usageContext
+          );
     sourceSummary = file.name;
   } else if (text) {
-    result = await analyzeAiIntakeFromText(text);
+    result = await analyzeAiIntakeFromText(text, usageContext);
     sourceSummary = text.slice(0, 40);
   } else {
     return { error: "写真・ファイルを選択するか、文面を入力・音声で話してください。" };

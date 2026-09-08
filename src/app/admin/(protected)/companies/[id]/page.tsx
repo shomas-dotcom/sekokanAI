@@ -7,7 +7,8 @@ import {
   assignCompanyPlanAction,
   addCompanyNoteAction,
 } from "../../actions";
-import { Card, Input, Textarea, Select, Button, Badge } from "@/components/ui";
+import { Card, Textarea, Select, Button, Badge } from "@/components/ui";
+import { daysAgo } from "@/lib/dateRange";
 
 const NOTE_TYPE_LABEL: Record<string, string> = { MEETING: "商談", INQUIRY: "問い合わせ" };
 
@@ -36,6 +37,16 @@ export default async function AdminCompanyDetailPage({
   await prisma.platformAdminAuditLog.create({
     data: { adminId: admin.id, action: "company.view", companyId: company.id },
   });
+
+  // AI利用状況(直近30日)。将来のAIコスト分析・料金プラン検討のための最低限の集計。
+  const thirtyDaysAgo = daysAgo(30);
+  const [aiUsageTotal, aiUsageRecent30d, aiUsageFailures30d] = await Promise.all([
+    prisma.aiUsageLog.count({ where: { companyId: company.id } }),
+    prisma.aiUsageLog.count({ where: { companyId: company.id, createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.aiUsageLog.count({
+      where: { companyId: company.id, createdAt: { gte: thirtyDaysAgo }, success: false },
+    }),
+  ]);
 
   const recentAuditLogs = await prisma.auditLog.findMany({
     where: { companyId: company.id },
@@ -109,6 +120,27 @@ export default async function AdminCompanyDetailPage({
             </Button>
           </form>
         )}
+      </Card>
+
+      <Card>
+        <h2 className="mb-3 font-semibold text-slate-900">AI利用状況</h2>
+        <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-slate-500">AI実行回数(累計)</dt>
+            <dd className="font-medium text-slate-900">{aiUsageTotal}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">直近30日の実行回数</dt>
+            <dd className="font-medium text-slate-900">{aiUsageRecent30d}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">直近30日の失敗回数</dt>
+            <dd className="font-medium text-slate-900">{aiUsageFailures30d}</dd>
+          </div>
+        </dl>
+        <p className="mt-2 text-xs text-slate-500">
+          トークン数・API料金の集計はまだ表示していません(件数が増えてから正しい平均値を出すため)。
+        </p>
       </Card>
 
       <Card>

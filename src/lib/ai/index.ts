@@ -2,6 +2,7 @@
 // 特定ベンダーへの依存を避けるため、呼び出し側はこのモジュールの関数のみを利用する。
 
 import { normalizeExtractedText } from "@/lib/textNormalize";
+import { recordAiUsage, type AiUsageContext } from "@/lib/aiUsageLog";
 
 export type RateMasterCandidate = {
   id: string;
@@ -30,35 +31,58 @@ const isMockMode = () => !process.env.AI_API_KEY;
 // 軽量・低コストなモデルを使う(構造化データの抽出のみが目的で、高度な推論は不要なため)。
 const ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
 
-async function callAnthropic(system: string, userMessage: string): Promise<string> {
+async function callAnthropic(
+  system: string,
+  userMessage: string,
+  usageContext?: AiUsageContext
+): Promise<string> {
   const apiKey = process.env.AI_API_KEY;
   if (!apiKey) throw new Error("AI_API_KEY is not set");
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 1024,
+        temperature: 0.2,
+        system,
+        messages: [{ role: "user", content: userMessage }],
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Anthropic API error: ${response.status} ${body.slice(0, 200)}`);
+    }
+
+    const data = (await response.json()) as {
+      content?: { text?: string }[];
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    const text = data.content?.[0]?.text;
+    if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
+
+    await recordAiUsage(usageContext, {
       model: ANTHROPIC_MODEL,
-      max_tokens: 1024,
-      temperature: 0.2,
-      system,
-      messages: [{ role: "user", content: userMessage }],
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Anthropic API error: ${response.status} ${body.slice(0, 200)}`);
+      success: true,
+      inputTokens: data.usage?.input_tokens ?? null,
+      outputTokens: data.usage?.output_tokens ?? null,
+    });
+    return text;
+  } catch (err) {
+    await recordAiUsage(usageContext, {
+      model: ANTHROPIC_MODEL,
+      success: false,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
   }
-
-  const data = (await response.json()) as { content?: { text?: string }[] };
-  const text = data.content?.[0]?.text;
-  if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
-  return text;
 }
 
 // 名刺・身分証等の画像を直接読ませる呼び出し。AnthropicのMessages APIは
@@ -69,86 +93,130 @@ async function callAnthropicVision(
   system: string,
   base64Image: string,
   mediaType: "image/jpeg" | "image/png" | "image/webp",
-  userText: string
+  userText: string,
+  usageContext?: AiUsageContext
 ): Promise<string> {
   const apiKey = process.env.AI_API_KEY;
   if (!apiKey) throw new Error("AI_API_KEY is not set");
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 1024,
+        temperature: 0.2,
+        system,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType, data: base64Image } },
+              { type: "text", text: userText },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Anthropic API error: ${response.status} ${body.slice(0, 200)}`);
+    }
+
+    const data = (await response.json()) as {
+      content?: { text?: string }[];
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    const text = data.content?.[0]?.text;
+    if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
+
+    await recordAiUsage(usageContext, {
       model: ANTHROPIC_MODEL,
-      max_tokens: 1024,
-      temperature: 0.2,
-      system,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: base64Image } },
-            { type: "text", text: userText },
-          ],
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Anthropic API error: ${response.status} ${body.slice(0, 200)}`);
+      success: true,
+      inputTokens: data.usage?.input_tokens ?? null,
+      outputTokens: data.usage?.output_tokens ?? null,
+    });
+    return text;
+  } catch (err) {
+    await recordAiUsage(usageContext, {
+      model: ANTHROPIC_MODEL,
+      success: false,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
   }
-
-  const data = (await response.json()) as { content?: { text?: string }[] };
-  const text = data.content?.[0]?.text;
-  if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
-  return text;
 }
 
 // PDFを直接読ませる呼び出し。Anthropic Messages APIはPDFをdocumentタイプの
 // contentブロックとしてbase64で渡すとテキスト抽出/OCR込みで内容を理解できるため、
 // 別途PDF解析ライブラリを追加する必要がない(依存を増やさない方針を維持できる)。
-async function callAnthropicDocument(system: string, base64Pdf: string, userText: string): Promise<string> {
+async function callAnthropicDocument(
+  system: string,
+  base64Pdf: string,
+  userText: string,
+  usageContext?: AiUsageContext
+): Promise<string> {
   const apiKey = process.env.AI_API_KEY;
   if (!apiKey) throw new Error("AI_API_KEY is not set");
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 1024,
+        temperature: 0.2,
+        system,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Pdf } },
+              { type: "text", text: userText },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Anthropic API error: ${response.status} ${body.slice(0, 200)}`);
+    }
+
+    const data = (await response.json()) as {
+      content?: { text?: string }[];
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    const text = data.content?.[0]?.text;
+    if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
+
+    await recordAiUsage(usageContext, {
       model: ANTHROPIC_MODEL,
-      max_tokens: 1024,
-      temperature: 0.2,
-      system,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Pdf } },
-            { type: "text", text: userText },
-          ],
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Anthropic API error: ${response.status} ${body.slice(0, 200)}`);
+      success: true,
+      inputTokens: data.usage?.input_tokens ?? null,
+      outputTokens: data.usage?.output_tokens ?? null,
+    });
+    return text;
+  } catch (err) {
+    await recordAiUsage(usageContext, {
+      model: ANTHROPIC_MODEL,
+      success: false,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
   }
-
-  const data = (await response.json()) as { content?: { text?: string }[] };
-  const text = data.content?.[0]?.text;
-  if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
-  return text;
 }
 
 /** Claudeが```json``` で囲んで返すことがあるため取り除いてからJSONとして解釈する。 */
@@ -169,14 +237,16 @@ function extractJson<T>(raw: string): T | null {
  */
 export async function draftQuoteItemsFromText(
   freeTextRaw: string,
-  rateMaster: RateMasterCandidate[] = []
+  rateMaster: RateMasterCandidate[] = [],
+  usageContext?: AiUsageContext
 ): Promise<DraftQuoteItem[]> {
   const freeText = normalizeExtractedText(freeTextRaw);
   if (isMockMode()) {
+    await recordAiUsage(usageContext, { model: "mock", success: true });
     return mockDraftQuoteItems(freeText, rateMaster);
   }
   try {
-    return await aiDraftQuoteItems(freeText, rateMaster);
+    return await aiDraftQuoteItems(freeText, rateMaster, usageContext);
   } catch (err) {
     // AI呼び出しが失敗しても見積作成自体は止めない(ルールベースの下書きにフォールバックする)
     console.error("[ai] draftQuoteItemsFromText: falling back to mock", err);
@@ -192,7 +262,8 @@ export async function draftQuoteItemsFromText(
  */
 async function aiDraftQuoteItems(
   freeText: string,
-  rateMaster: RateMasterCandidate[]
+  rateMaster: RateMasterCandidate[],
+  usageContext?: AiUsageContext
 ): Promise<DraftQuoteItem[]> {
   const system = `あなたは建設工事の見積書作成を補助するアシスタントです。
 与えられた工事内容の自由記述テキストから、見積の明細候補を抽出してください。
@@ -201,7 +272,7 @@ async function aiDraftQuoteItems(
 単価・金額・原価は絶対に含めないでください(それらは別の仕組みで会社の単価表と突き合わせます)。
 数量・単位が文中に明記されていない場合は quantity を 1、unit を "式" としてください。`;
 
-  const raw = await callAnthropic(system, freeText);
+  const raw = await callAnthropic(system, freeText, usageContext);
   const parsed = extractJson<{ itemName: string; spec: string | null; quantity: number; unit: string }[]>(
     raw
   );
@@ -315,13 +386,17 @@ function toHHMM(hourText: string): string {
  * 認識・抽出できなかった項目は勝手に補完せず unclearItems に確認候補として積む
  * (REQUIREMENTS.md 音声入力機能の必須仕様)。
  */
-export async function draftDailyReportFromText(rawTextInput: string): Promise<DailyReportDraft> {
+export async function draftDailyReportFromText(
+  rawTextInput: string,
+  usageContext?: AiUsageContext
+): Promise<DailyReportDraft> {
   const rawText = normalizeExtractedText(rawTextInput);
   if (isMockMode()) {
+    await recordAiUsage(usageContext, { model: "mock", success: true });
     return mockDraftDailyReport(rawText);
   }
   try {
-    return await aiDraftDailyReport(rawText);
+    return await aiDraftDailyReport(rawText, usageContext);
   } catch (err) {
     // AI呼び出しが失敗しても日報作成自体は止めない(ルールベースの下書きにフォールバックする)
     console.error("[ai] draftDailyReportFromText: falling back to mock", err);
@@ -345,7 +420,10 @@ const DAILY_REPORT_FIELD_LABEL: Record<string, string> = {
  * AIに項目抽出をさせるが、「明記されていない項目を推測で埋めない」ことを厳しく指示する。
  * nullで返ってきた項目は、モック実装と同じくunclearItems(確認候補)として積む。
  */
-async function aiDraftDailyReport(rawText: string): Promise<DailyReportDraft> {
+async function aiDraftDailyReport(
+  rawText: string,
+  usageContext?: AiUsageContext
+): Promise<DailyReportDraft> {
   const system = `あなたは建設現場の作業日報作成を補助するアシスタントです。
 与えられた音声認識結果(またはテキスト)から、日報の項目を抽出してください。
 必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
@@ -354,7 +432,7 @@ startTime/endTimeは"HH:mm"形式にしてください。
 最も重要な注意: 文中に明確に述べられていない項目は、絶対に推測で埋めずnullにしてください。
 「異常なし」「良好」等、確認できていない安全確認の結果を勝手に作らないでください。`;
 
-  const raw = await callAnthropic(system, rawText);
+  const raw = await callAnthropic(system, rawText, usageContext);
   const parsed = extractJson<Record<string, unknown>>(raw);
   if (!parsed) throw new Error("AI response was not valid JSON");
 
@@ -470,13 +548,17 @@ const CUSTOMER_INTENT_WORDS = ["顧客登録", "取引先登録", "会社名は"
 const EMPLOYEE_INTENT_WORDS = ["従業員登録", "作業員登録", "入社", "雇用区分"];
 const PROJECT_REQUEST_INTENT_WORDS = ["見積依頼", "工事依頼", "元請", "発注者"];
 
-export async function classifyVoiceIntent(rawTextInput: string): Promise<VoiceIntent> {
+export async function classifyVoiceIntent(
+  rawTextInput: string,
+  usageContext?: AiUsageContext
+): Promise<VoiceIntent> {
   const rawText = normalizeExtractedText(rawTextInput);
   if (isMockMode()) {
+    await recordAiUsage(usageContext, { model: "mock", success: true });
     return mockClassifyVoiceIntent(rawText);
   }
   try {
-    return await aiClassifyVoiceIntent(rawText);
+    return await aiClassifyVoiceIntent(rawText, usageContext);
   } catch (err) {
     console.error("[ai] classifyVoiceIntent: falling back to mock", err);
     return mockClassifyVoiceIntent(rawText);
@@ -495,7 +577,10 @@ function mockClassifyVoiceIntent(rawText: string): VoiceIntent {
   return "DAILY_REPORT";
 }
 
-async function aiClassifyVoiceIntent(rawText: string): Promise<VoiceIntent> {
+async function aiClassifyVoiceIntent(
+  rawText: string,
+  usageContext?: AiUsageContext
+): Promise<VoiceIntent> {
   const system = `あなたは建設会社の業務システムの音声入力を振り分けるアシスタントです。
 話された内容が次のどれに最も近いか判定し、該当する一語だけを出力してください
 (説明文は一切不要です)。
@@ -506,7 +591,7 @@ async function aiClassifyVoiceIntent(rawText: string): Promise<VoiceIntent> {
 - PROJECT_REQUEST: 元請や発注者から届いた見積依頼・工事依頼の内容(現場住所・工期・工事内容等)
 判断に迷う場合は必ず DAILY_REPORT としてください。`;
 
-  const raw = (await callAnthropic(system, rawText)).trim();
+  const raw = (await callAnthropic(system, rawText, usageContext)).trim();
   const valid: VoiceIntent[] = ["KY", "CUSTOMER", "EMPLOYEE", "PROJECT_REQUEST", "DAILY_REPORT"];
   return valid.find((v) => raw.includes(v)) ?? "DAILY_REPORT";
 }
@@ -691,9 +776,15 @@ function parseBusinessCardJson(raw: string): BusinessCardExtraction {
 
 export async function extractBusinessCardFromImage(
   base64Image: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp"
+  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  usageContext?: AiUsageContext
 ): Promise<BusinessCardExtraction> {
   if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため名刺の読み取りは利用できません",
+    });
     return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
   }
   try {
@@ -701,7 +792,8 @@ export async function extractBusinessCardFromImage(
       BUSINESS_CARD_SYSTEM,
       base64Image,
       mediaType,
-      "この名刺を読み取ってください。"
+      "この名刺を読み取ってください。",
+      usageContext
     );
     return parseBusinessCardJson(raw);
   } catch (err) {
@@ -712,12 +804,25 @@ export async function extractBusinessCardFromImage(
 
 // 「資料添付」タブ用(名刺をスキャンしたPDF、または名刺付きの資料PDF)。画像版と
 // 判定基準・抽出項目は完全に同じにする。
-export async function extractBusinessCardFromPdf(base64Pdf: string): Promise<BusinessCardExtraction> {
+export async function extractBusinessCardFromPdf(
+  base64Pdf: string,
+  usageContext?: AiUsageContext
+): Promise<BusinessCardExtraction> {
   if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため名刺の読み取りは利用できません",
+    });
     return { ...EMPTY_BUSINESS_CARD_EXTRACTION, confidence: "unavailable" };
   }
   try {
-    const raw = await callAnthropicDocument(BUSINESS_CARD_SYSTEM, base64Pdf, "この名刺を読み取ってください。");
+    const raw = await callAnthropicDocument(
+      BUSINESS_CARD_SYSTEM,
+      base64Pdf,
+      "この名刺を読み取ってください。",
+      usageContext
+    );
     return parseBusinessCardJson(raw);
   } catch (err) {
     console.error("[ai] extractBusinessCardFromPdf: failed", err);
@@ -763,11 +868,17 @@ function parsePhotoMetadataJson(raw: string): PhotoMetadataExtraction {
 
 export async function suggestPhotoMetadataFromImage(
   base64Image: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp"
+  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  usageContext?: AiUsageContext
 ): Promise<PhotoMetadataExtraction> {
   if (isMockMode()) {
     // 写真の中身を判定する処理は本物の画像認識AIが無いと精度を出せないため、
     // 名刺・身分証読み取りと同じ方針で「不明」を正直に返す(それらしい値を作らない)。
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため写真の判定は利用できません",
+    });
     return { phase: "UNKNOWN", caption: null, confidence: "unavailable" };
   }
   try {
@@ -775,7 +886,8 @@ export async function suggestPhotoMetadataFromImage(
       PHOTO_METADATA_SYSTEM,
       base64Image,
       mediaType,
-      "この現場写真を確認してください。"
+      "この現場写真を確認してください。",
+      usageContext
     );
     return parsePhotoMetadataJson(raw);
   } catch (err) {
@@ -799,12 +911,16 @@ function extractPrefixed(text: string, labels: string[]): string | null {
   return null;
 }
 
-export async function extractCustomerFieldsFromText(text: string): Promise<BusinessCardExtraction> {
+export async function extractCustomerFieldsFromText(
+  text: string,
+  usageContext?: AiUsageContext
+): Promise<BusinessCardExtraction> {
   if (isMockMode()) {
+    await recordAiUsage(usageContext, { model: "mock", success: true });
     return mockExtractCustomerFields(text);
   }
   try {
-    return await aiExtractCustomerFields(text);
+    return await aiExtractCustomerFields(text, usageContext);
   } catch (err) {
     console.error("[ai] extractCustomerFieldsFromText: falling back to mock", err);
     return mockExtractCustomerFields(text);
@@ -838,14 +954,17 @@ function mockExtractCustomerFields(rawText: string): BusinessCardExtraction {
   return { ...fields, confidence: coreFieldsFilled >= 2 ? "high" : "needs_review" };
 }
 
-async function aiExtractCustomerFields(text: string): Promise<BusinessCardExtraction> {
+async function aiExtractCustomerFields(
+  text: string,
+  usageContext?: AiUsageContext
+): Promise<BusinessCardExtraction> {
   const system = `あなたは建設会社の事務担当者を補助するアシスタントです。
 話し言葉または自由記述のテキストから、取引先の情報を読み取ってください。
 必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
 形式: {"companyName": string|null, "personName": string|null, "position": string|null, "department": string|null, "postalCode": string|null, "address": string|null, "phone": string|null, "mobilePhone": string|null, "fax": string|null, "email": string|null, "companyUrl": string|null}
 最も重要な注意: 文中に述べられていない項目は、絶対に推測で埋めずnullにしてください。`;
 
-  const raw = await callAnthropic(system, text);
+  const raw = await callAnthropic(system, text, usageContext);
   const parsed = extractJson<Record<string, unknown>>(raw);
   if (!parsed) throw new Error("AI response was not valid JSON");
 
@@ -880,12 +999,16 @@ export type EmployeeFieldExtraction = {
   confidence: "high" | "needs_review";
 };
 
-export async function extractEmployeeFieldsFromText(text: string): Promise<EmployeeFieldExtraction> {
+export async function extractEmployeeFieldsFromText(
+  text: string,
+  usageContext?: AiUsageContext
+): Promise<EmployeeFieldExtraction> {
   if (isMockMode()) {
+    await recordAiUsage(usageContext, { model: "mock", success: true });
     return mockExtractEmployeeFields(text);
   }
   try {
-    return await aiExtractEmployeeFields(text);
+    return await aiExtractEmployeeFields(text, usageContext);
   } catch (err) {
     console.error("[ai] extractEmployeeFieldsFromText: falling back to mock", err);
     return mockExtractEmployeeFields(text);
@@ -904,14 +1027,17 @@ function mockExtractEmployeeFields(rawText: string): EmployeeFieldExtraction {
   return { ...fields, confidence: fields.name ? "high" : "needs_review" };
 }
 
-async function aiExtractEmployeeFields(text: string): Promise<EmployeeFieldExtraction> {
+async function aiExtractEmployeeFields(
+  text: string,
+  usageContext?: AiUsageContext
+): Promise<EmployeeFieldExtraction> {
   const system = `あなたは建設会社の事務担当者を補助するアシスタントです。
 話し言葉または自由記述のテキストから、従業員の情報を読み取ってください。
 必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
 形式: {"name": string|null, "nameKana": string|null, "position": string|null, "email": string|null, "phone": string|null}
 最も重要な注意: 文中に述べられていない項目は、絶対に推測で埋めずnullにしてください。`;
 
-  const raw = await callAnthropic(system, text);
+  const raw = await callAnthropic(system, text, usageContext);
   const parsed = extractJson<Record<string, unknown>>(raw);
   if (!parsed) throw new Error("AI response was not valid JSON");
 
@@ -1028,10 +1154,16 @@ const UNAVAILABLE_PROJECT_REQUEST: ProjectRequestExtraction = {
   confidence: "unavailable",
 };
 
-export async function extractProjectRequestFromText(text: string): Promise<ProjectRequestExtraction> {
-  if (isMockMode()) return mockExtractProjectRequest(text);
+export async function extractProjectRequestFromText(
+  text: string,
+  usageContext?: AiUsageContext
+): Promise<ProjectRequestExtraction> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, { model: "mock", success: true });
+    return mockExtractProjectRequest(text);
+  }
   try {
-    const raw = await callAnthropic(PROJECT_REQUEST_SYSTEM, text);
+    const raw = await callAnthropic(PROJECT_REQUEST_SYSTEM, text, usageContext);
     return finalizeProjectRequestExtraction(parseProjectRequestJson(raw));
   } catch (err) {
     console.error("[ai] extractProjectRequestFromText: falling back to mock", err);
@@ -1041,15 +1173,24 @@ export async function extractProjectRequestFromText(text: string): Promise<Proje
 
 export async function extractProjectRequestFromImage(
   base64Image: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp"
+  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  usageContext?: AiUsageContext
 ): Promise<ProjectRequestExtraction> {
-  if (isMockMode()) return UNAVAILABLE_PROJECT_REQUEST;
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため画像の読み取りは利用できません",
+    });
+    return UNAVAILABLE_PROJECT_REQUEST;
+  }
   try {
     const raw = await callAnthropicVision(
       PROJECT_REQUEST_SYSTEM,
       base64Image,
       mediaType,
-      "この画像の依頼内容を読み取ってください。"
+      "この画像の依頼内容を読み取ってください。",
+      usageContext
     );
     return finalizeProjectRequestExtraction(parseProjectRequestJson(raw));
   } catch (err) {
@@ -1058,13 +1199,24 @@ export async function extractProjectRequestFromImage(
   }
 }
 
-export async function extractProjectRequestFromPdf(base64Pdf: string): Promise<ProjectRequestExtraction> {
-  if (isMockMode()) return UNAVAILABLE_PROJECT_REQUEST;
+export async function extractProjectRequestFromPdf(
+  base64Pdf: string,
+  usageContext?: AiUsageContext
+): Promise<ProjectRequestExtraction> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のためPDFの読み取りは利用できません",
+    });
+    return UNAVAILABLE_PROJECT_REQUEST;
+  }
   try {
     const raw = await callAnthropicDocument(
       PROJECT_REQUEST_SYSTEM,
       base64Pdf,
-      "このPDFの依頼内容を読み取ってください。"
+      "このPDFの依頼内容を読み取ってください。",
+      usageContext
     );
     return finalizeProjectRequestExtraction(parseProjectRequestJson(raw));
   } catch (err) {
@@ -1159,11 +1311,25 @@ function finalizeIdCardExtraction(fields: Omit<IdCardExtraction, "confidence">):
 
 export async function extractIdCardFromImage(
   base64Image: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp"
+  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  usageContext?: AiUsageContext
 ): Promise<IdCardExtraction> {
-  if (isMockMode()) return UNAVAILABLE_ID_CARD;
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため身分証の読み取りは利用できません",
+    });
+    return UNAVAILABLE_ID_CARD;
+  }
   try {
-    const raw = await callAnthropicVision(ID_CARD_SYSTEM, base64Image, mediaType, "この身分証を読み取ってください。");
+    const raw = await callAnthropicVision(
+      ID_CARD_SYSTEM,
+      base64Image,
+      mediaType,
+      "この身分証を読み取ってください。",
+      usageContext
+    );
     return finalizeIdCardExtraction(parseIdCardJson(raw));
   } catch (err) {
     console.error("[ai] extractIdCardFromImage: failed", err);
@@ -1171,10 +1337,25 @@ export async function extractIdCardFromImage(
   }
 }
 
-export async function extractIdCardFromPdf(base64Pdf: string): Promise<IdCardExtraction> {
-  if (isMockMode()) return UNAVAILABLE_ID_CARD;
+export async function extractIdCardFromPdf(
+  base64Pdf: string,
+  usageContext?: AiUsageContext
+): Promise<IdCardExtraction> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため身分証の読み取りは利用できません",
+    });
+    return UNAVAILABLE_ID_CARD;
+  }
   try {
-    const raw = await callAnthropicDocument(ID_CARD_SYSTEM, base64Pdf, "この身分証を読み取ってください。");
+    const raw = await callAnthropicDocument(
+      ID_CARD_SYSTEM,
+      base64Pdf,
+      "この身分証を読み取ってください。",
+      usageContext
+    );
     return finalizeIdCardExtraction(parseIdCardJson(raw));
   } catch (err) {
     console.error("[ai] extractIdCardFromPdf: failed", err);
@@ -1348,10 +1529,16 @@ function mockAnalyzeAiIntakeFromText(text: string): AiIntakeResult {
   return { ...UNAVAILABLE_INTAKE, confidence: "needs_review" };
 }
 
-export async function analyzeAiIntakeFromText(text: string): Promise<AiIntakeResult> {
-  if (isMockMode()) return mockAnalyzeAiIntakeFromText(text);
+export async function analyzeAiIntakeFromText(
+  text: string,
+  usageContext?: AiUsageContext
+): Promise<AiIntakeResult> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, { model: "mock", success: true });
+    return mockAnalyzeAiIntakeFromText(text);
+  }
   try {
-    const raw = await callAnthropic(AI_INTAKE_SYSTEM, text);
+    const raw = await callAnthropic(AI_INTAKE_SYSTEM, text, usageContext);
     return parseAiIntakeJson(raw);
   } catch (err) {
     console.error("[ai] analyzeAiIntakeFromText: falling back to mock", err);
@@ -1361,15 +1548,24 @@ export async function analyzeAiIntakeFromText(text: string): Promise<AiIntakeRes
 
 export async function analyzeAiIntakeFromImage(
   base64Image: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp"
+  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  usageContext?: AiUsageContext
 ): Promise<AiIntakeResult> {
-  if (isMockMode()) return UNAVAILABLE_INTAKE;
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため画像の判定は利用できません",
+    });
+    return UNAVAILABLE_INTAKE;
+  }
   try {
     const raw = await callAnthropicVision(
       AI_INTAKE_SYSTEM,
       base64Image,
       mediaType,
-      "この画像の種類を判定し、該当する情報を抽出してください。"
+      "この画像の種類を判定し、該当する情報を抽出してください。",
+      usageContext
     );
     return parseAiIntakeJson(raw);
   } catch (err) {
@@ -1378,13 +1574,24 @@ export async function analyzeAiIntakeFromImage(
   }
 }
 
-export async function analyzeAiIntakeFromPdf(base64Pdf: string): Promise<AiIntakeResult> {
-  if (isMockMode()) return UNAVAILABLE_INTAKE;
+export async function analyzeAiIntakeFromPdf(
+  base64Pdf: string,
+  usageContext?: AiUsageContext
+): Promise<AiIntakeResult> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のためPDFの判定は利用できません",
+    });
+    return UNAVAILABLE_INTAKE;
+  }
   try {
     const raw = await callAnthropicDocument(
       AI_INTAKE_SYSTEM,
       base64Pdf,
-      "このPDFの種類を判定し、該当する情報を抽出してください。"
+      "このPDFの種類を判定し、該当する情報を抽出してください。",
+      usageContext
     );
     return parseAiIntakeJson(raw);
   } catch (err) {

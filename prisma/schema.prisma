@@ -94,6 +94,7 @@ model Company {
   pricingPlanId             String?
   pricingPlan               Plan?                    @relation(fields: [pricingPlanId], references: [id])
   notes                     CompanyNote[]
+  aiUsageLogs               AiUsageLog[]
 }
 
 // Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
@@ -275,6 +276,7 @@ model User {
   auditLogs           AuditLog[]
   sessions            Session[]
   verificationTokens  VerificationToken[]
+  aiUsageLogs         AiUsageLog[]
 
   @@index([companyId])
 }
@@ -1004,4 +1006,27 @@ model CompanyNote {
   createdAt        DateTime        @default(now())
 
   @@index([companyId])
+}
+
+// AI(Anthropic API)呼び出し1回ごとの利用実績。会社別のAI利用回数・トークン数・
+// 成否を記録し、将来の料金プラン設計・原価分析(AIコスト管理)の元データにする。
+// AI_API_KEY未設定(モック動作)の場合もmodel="mock"として記録し、「AI機能を
+// 何回使ったか」という利用回数自体は追える形にする(コストはmockの場合0円)。
+model AiUsageLog {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature      String // 例: "quote.draft", "dailyReport.draft", "businessCard.scan"
+  model        String // 例: "claude-haiku-4-5-20251001" または "mock"
+  inputTokens  Int?
+  outputTokens Int?
+  success      Boolean
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@index([companyId])
+  @@index([companyId, createdAt])
+  @@index([userId])
 }

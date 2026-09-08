@@ -127,11 +127,15 @@ export async function scanEmployeeVoiceAction(
   _prevState: EmployeeVoiceFillState,
   formData: FormData
 ): Promise<EmployeeVoiceFillState> {
-  await requireUser();
+  const user = await requireUser();
   const transcript = String(formData.get("transcript") ?? "").trim();
   if (!transcript) return { error: "マイクで話すか、内容を入力してください。" };
 
-  const extraction = await extractEmployeeFieldsFromText(transcript);
+  const extraction = await extractEmployeeFieldsFromText(transcript, {
+    companyId: user.companyId,
+    userId: user.id,
+    feature: "employee.voiceExtract",
+  });
   return { extraction };
 }
 
@@ -198,7 +202,7 @@ export async function scanIdCardAction(
   _prevState: IdCardScanState,
   formData: FormData
 ): Promise<IdCardScanState> {
-  await requireUser();
+  const user = await requireUser();
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
     return { error: "身分証の画像またはPDFを選択してください。" };
@@ -208,10 +212,11 @@ export async function scanIdCardAction(
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
+  const usageContext = { companyId: user.companyId, userId: user.id, feature: "idCard.scan" };
   const extraction =
     file.type === "application/pdf"
-      ? await extractIdCardFromPdf(base64)
-      : await extractIdCardFromImage(base64, file.type as "image/jpeg" | "image/png" | "image/webp");
+      ? await extractIdCardFromPdf(base64, usageContext)
+      : await extractIdCardFromImage(base64, file.type as "image/jpeg" | "image/png" | "image/webp", usageContext);
 
   if (extraction.confidence === "unavailable") {
     return {

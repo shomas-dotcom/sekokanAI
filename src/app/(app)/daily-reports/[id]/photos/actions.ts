@@ -22,7 +22,7 @@ export async function suggestPhotoMetadataAction(
   _prevState: PhotoSuggestState,
   formData: FormData
 ): Promise<PhotoSuggestState> {
-  await requireUser();
+  const user = await requireUser();
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
     return { error: "写真を選択してください。" };
@@ -34,7 +34,8 @@ export async function suggestPhotoMetadataAction(
   const base64 = buffer.toString("base64");
   const suggestion = await suggestPhotoMetadataFromImage(
     base64,
-    file.type as "image/jpeg" | "image/png" | "image/webp"
+    file.type as "image/jpeg" | "image/png" | "image/webp",
+    { companyId: user.companyId, userId: user.id, feature: "photo.suggestMetadata" }
   );
 
   if (suggestion.confidence === "unavailable") {

@@ -242,6 +242,7 @@ export async function scanProjectRequestAction(
   const user = await requireUser();
   const transcript = String(formData.get("transcript") ?? "").trim();
   const file = formData.get("file");
+  const usageContext = { companyId: user.companyId, userId: user.id, feature: "projectRequest.scan" };
 
   let extraction: ProjectRequestExtraction;
 
@@ -253,10 +254,14 @@ export async function scanProjectRequestAction(
     const base64 = buffer.toString("base64");
     extraction =
       file.type === "application/pdf"
-        ? await extractProjectRequestFromPdf(base64)
-        : await extractProjectRequestFromImage(base64, file.type as "image/jpeg" | "image/png" | "image/webp");
+        ? await extractProjectRequestFromPdf(base64, usageContext)
+        : await extractProjectRequestFromImage(
+            base64,
+            file.type as "image/jpeg" | "image/png" | "image/webp",
+            usageContext
+          );
   } else if (transcript) {
-    extraction = await extractProjectRequestFromText(transcript);
+    extraction = await extractProjectRequestFromText(transcript, usageContext);
   } else {
     return { error: "写真・PDFを選択するか、依頼内容を入力してください。" };
   }

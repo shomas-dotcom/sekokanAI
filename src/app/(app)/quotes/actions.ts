@@ -64,7 +64,11 @@ export async function createQuoteAction(
     ? await prisma.rateMasterItem.findMany({ where: { companyId: user.companyId } })
     : [];
   const draftItems = freeText
-    ? await draftQuoteItemsFromText(freeText, rateMasterItems)
+    ? await draftQuoteItemsFromText(freeText, rateMasterItems, {
+        companyId: user.companyId,
+        userId: user.id,
+        feature: "quote.draft",
+      })
     : [];
 
   const quote = await prisma.quote.create({
