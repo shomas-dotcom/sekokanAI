@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/numbering";
-import { validateAiDocumentFile } from "@/lib/fileValidation";
+import { validateAiDocumentFile, validateDocumentFile } from "@/lib/fileValidation";
 import {
   extractProjectRequestFromText,
   extractProjectRequestFromImage,
@@ -86,6 +86,14 @@ export async function createProjectAction(
   const dateError = validateDates(data);
   if (dateError) return { error: dateError };
 
+  // 「写真・ファイル添付」タブで選ばれたファイル(新規登録画面のみ)。案件の作成自体を
+  // 止めないよう、DBへ何も作る前にここで検証しておく。
+  const attachedFiles = formData.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  for (const file of attachedFiles) {
+    const validationError = validateDocumentFile(file);
+    if (validationError) return { error: `${file.name}: ${validationError}` };
+  }
+
   const customer = await prisma.customer.findFirst({
     where: { id: data.customerId, companyId: user.companyId },
   });
@@ -102,6 +110,29 @@ export async function createProjectAction(
     targetType: "Project",
     targetId: project.id,
   });
+
+  // 「写真・ファイル添付」タブで選ばれたファイルを、案件の「ファイル」欄へ保存する
+  // (uploadProjectFileActionと同じ保存先・同じ検証を、登録と同じ画面で済ませられるようにしたもの)。
+  for (const file of attachedFiles) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const saved = await prisma.projectFile.create({
+      data: {
+        companyId: user.companyId,
+        projectId: project.id,
+        fileName: file.name,
+        mimeType: file.type,
+        data: buffer,
+        size: file.size,
+      },
+    });
+    await logAction({
+      companyId: user.companyId,
+      userId: user.id,
+      action: "projectFile.create",
+      targetType: "ProjectFile",
+      targetId: saved.id,
+    });
+  }
 
   revalidatePath("/projects");
   redirect("/projects");

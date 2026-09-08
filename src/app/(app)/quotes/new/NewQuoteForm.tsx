@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import { createQuoteAction } from "../actions";
 import { Input, Select, Textarea, Button, FieldLabel } from "@/components/ui";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
-import { useRef } from "react";
+import { Tabs } from "@/components/Tabs";
 
 export function NewQuoteForm({ projects }: { projects: { id: string; label: string }[] }) {
   const [state, formAction, pending] = useActionState(createQuoteAction, undefined);
@@ -12,38 +12,68 @@ export function NewQuoteForm({ projects }: { projects: { id: string; label: stri
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
-      <FieldLabel label="案件" required>
-        <Select name="projectId" required defaultValue="">
-          <option value="" disabled>
-            選択してください
-          </option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </Select>
-      </FieldLabel>
+      <Tabs
+        tabs={[
+          {
+            label: "基本情報",
+            content: (
+              <div className="flex flex-col gap-4">
+                <FieldLabel label="案件" required>
+                  <Select name="projectId" required defaultValue="">
+                    <option value="" disabled>
+                      選択してください
+                    </option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </Select>
+                </FieldLabel>
 
-      <FieldLabel label="見積名" required>
-        <Input name="title" required placeholder="例: 道路築造工事 見積書" />
-      </FieldLabel>
+                <FieldLabel label="見積名" required>
+                  <Input name="title" required placeholder="例: 道路築造工事 見積書" />
+                </FieldLabel>
 
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-slate-700">工事内容(自由記述、任意)</span>
-          <VoiceInputButton targetRef={freeTextRef} mode="append" />
-        </div>
-        <Textarea
-          ref={freeTextRef}
-          name="freeText"
-          rows={4}
-          placeholder={"例:\n掘削工\n残土処分\nL型側溝設置"}
-        />
-        <span className="text-xs text-slate-400">
-          改行区切りでAIが見積項目の下書きを作成します(単価は未設定・要確認)。マイクボタンで音声入力もできます。
-        </span>
-      </div>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-700">工事内容(自由記述、任意)</span>
+                    <VoiceInputButton targetRef={freeTextRef} mode="append" />
+                  </div>
+                  <Textarea
+                    ref={freeTextRef}
+                    name="freeText"
+                    rows={4}
+                    placeholder={"例:\n掘削工\n残土処分\nL型側溝設置"}
+                  />
+                  <span className="text-xs text-slate-400">
+                    改行区切りでAIが見積項目の下書きを作成します(単価は未設定・要確認)。マイクボタンで音声入力もできます。
+                  </span>
+                </div>
+              </div>
+            ),
+          },
+          {
+            label: "📎 写真・ファイル添付",
+            content: (
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel label="現地写真・見積依頼資料など(任意)">
+                  <input
+                    type="file"
+                    name="files"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,.xls,.docx,.doc"
+                    className="text-sm"
+                  />
+                </FieldLabel>
+                <span className="text-xs text-slate-400">
+                  ここで選んだ写真・資料は、見積の「ファイル参照」欄に保存されます(内容をAIが読み取ることはありません)。後からでも追加できます。
+                </span>
+              </div>
+            ),
+          },
+        ]}
+      />
 
       {state?.error && (
         <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>

@@ -5,6 +5,7 @@ import type { ProjectFormState } from "./actions";
 import { STATUS_LABEL } from "./statusLabel";
 import type { ProjectStatus } from "@/generated/prisma/enums";
 import { Input, Select, Textarea, Button, FieldLabel } from "@/components/ui";
+import { Tabs } from "@/components/Tabs";
 
 type Project = {
   id: string;
@@ -44,16 +45,19 @@ export function ProjectForm({
   project,
   customers,
   submitLabel,
+  extraTabs,
 }: {
   action: (state: ProjectFormState, formData: FormData) => Promise<ProjectFormState>;
   project?: Project;
   customers: { id: string; name: string }[];
   submitLabel: string;
+  /** 新規登録画面専用の追加タブ(例: 写真・ファイル添付)。編集画面では渡さないため表示は変わらない。 */
+  extraTabs?: { label: string; content: React.ReactNode }[];
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
 
-  return (
-    <form action={formAction} className="flex flex-col gap-4">
+  const fields = (
+    <div className="flex flex-col gap-4">
       {project && <input type="hidden" name="id" value={project.id} />}
 
       {project?.projectCode && (
@@ -171,6 +175,16 @@ export function ProjectForm({
           ))}
         </Select>
       </FieldLabel>
+    </div>
+  );
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4">
+      {extraTabs && extraTabs.length > 0 ? (
+        <Tabs tabs={[{ label: "基本情報", content: fields }, ...extraTabs]} />
+      ) : (
+        fields
+      )}
 
       {state?.error && (
         <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>

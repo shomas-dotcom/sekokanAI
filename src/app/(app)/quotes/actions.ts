@@ -9,6 +9,7 @@ import { logAction } from "@/lib/audit";
 import { draftQuoteItemsFromText } from "@/lib/ai";
 import { advanceProjectStatus } from "@/lib/projectStatus";
 import { defaultQuoteExpirationDate } from "@/lib/rateMaster";
+import { validateDocumentFile } from "@/lib/fileValidation";
 import type { PriceSource, RateCategory } from "@/generated/prisma/enums";
 
 const RATE_CATEGORIES: RateCategory[] = [
@@ -45,6 +46,14 @@ export async function createQuoteAction(
 
   if (!projectId) return { error: "案件を選択してください。" };
   if (!title) return { error: "見積名は必須です。" };
+
+  // 「写真・ファイル添付」タブで選ばれたファイル。見積の作成自体を止めないよう、
+  // DBへ何も作る前にここで検証しておく(不正なファイルがあれば見積を作らず差し戻す)。
+  const attachedFiles = formData.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  for (const file of attachedFiles) {
+    const validationError = validateDocumentFile(file);
+    if (validationError) return { error: `${file.name}: ${validationError}` };
+  }
 
   const project = await prisma.project.findFirst({
     where: { id: projectId, companyId: user.companyId },
@@ -94,6 +103,30 @@ export async function createQuoteAction(
     targetType: "Quote",
     targetId: quote.id,
   });
+
+  // 「写真・ファイル添付」タブで選ばれたファイルを、見積の「ファイル参照」欄へ保存する
+  // (uploadEntityFileActionと同じ保存先・同じ検証を、作成と同じ画面で済ませられるようにしたもの)。
+  for (const file of attachedFiles) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const saved = await prisma.entityFile.create({
+      data: {
+        companyId: user.companyId,
+        entityType: "QUOTE",
+        entityId: quote.id,
+        fileName: file.name,
+        mimeType: file.type,
+        data: buffer,
+        size: file.size,
+      },
+    });
+    await logAction({
+      companyId: user.companyId,
+      userId: user.id,
+      action: "entityFile.create",
+      targetType: "EntityFile",
+      targetId: saved.id,
+    });
+  }
 
   revalidatePath("/quotes");
   redirect(`/quotes/${quote.id}`);

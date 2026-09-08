@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ProjectForm } from "../ProjectForm";
 import { ProjectRequestScanner } from "../ProjectRequestScanner";
 import { createProjectAction } from "../actions";
-import { Card } from "@/components/ui";
+import { Card, FieldLabel } from "@/components/ui";
 import type { ProjectRequestExtraction } from "@/lib/ai";
 
 type CustomerOption = { id: string; name: string };
@@ -58,6 +58,27 @@ export function NewProjectPageClient({
           action={createProjectAction}
           customers={customers}
           submitLabel="登録する"
+          extraTabs={[
+            {
+              label: "📎 写真・ファイル添付",
+              content: (
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel label="現地写真・見積依頼資料など(任意)">
+                    <input
+                      type="file"
+                      name="files"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,.xls,.docx,.doc"
+                      className="text-sm"
+                    />
+                  </FieldLabel>
+                  <span className="text-xs text-slate-400">
+                    ここで選んだ写真・資料は、案件の「ファイル」欄に保存されます(内容をAIが読み取ることはありません)。後からでも追加できます。
+                  </span>
+                </div>
+              ),
+            },
+          ]}
           project={
             prefill
               ? {
