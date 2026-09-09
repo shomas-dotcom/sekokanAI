@@ -42,22 +42,18 @@ export default async function DashboardPage() {
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
   const [
-    customerCount,
     projectCount,
-    quoteCount,
     activeProjectCount,
     estimatingProjectCount,
     confirmedContractCount,
     contractsWithIssuedInvoice,
     issuedInvoiceCount,
     monthlyInvoiceAgg,
-    monthlyDailyReportCount,
     monthlyOvertimeAgg,
     expiringQualifications,
   ] = await Promise.all([
-    prisma.customer.count({ where: { companyId } }),
+    // 会社が登録したばかりかどうかの判定(「はじめに」カードの表示要否)に使う
     prisma.project.count({ where: { companyId } }),
-    prisma.quote.count({ where: { companyId } }),
     prisma.project.count({ where: { companyId, status: "IN_PROGRESS" } }),
     prisma.project.count({ where: { companyId, status: "ESTIMATING" } }),
     prisma.contract.count({ where: { companyId, status: "CONFIRMED" } }),
@@ -74,8 +70,6 @@ export default async function DashboardPage() {
       where: { companyId, status: { in: ["ISSUED", "PAID"] }, issueDate: { gte: monthStart, lt: monthEnd } },
       _sum: { total: true },
     }),
-    // 依頼文の「AI分析(人工集計・残業時間等の自動集計)」はLLMを使わず単純なSQL集計で実現する
-    prisma.dailyReport.count({ where: { companyId, reportDate: { gte: monthStart, lt: monthEnd } } }),
     prisma.dailyReport.aggregate({
       where: { companyId, reportDate: { gte: monthStart, lt: monthEnd } },
       _sum: { overtimeMinutes: true },
@@ -108,26 +102,18 @@ export default async function DashboardPage() {
   const monthlyBilledAmount = monthlyInvoiceAgg._sum.total ?? 0;
   const monthlyOvertimeHours = Math.round(((monthlyOvertimeAgg._sum.overtimeMinutes ?? 0) / 60) * 10) / 10;
 
+  // 「見て困らない数字」は絞る。ここに残すのは「今なにか対応が必要か」が
+  // 一目でわかる4つだけにする(それ以外は各一覧画面で見られる)。
   const cards = [
-    { label: "案件数", value: projectCount, href: "/projects", accent: "from-sky-500 to-indigo-500" },
-    { label: "見積中", value: estimatingProjectCount, href: "/quotes", accent: "from-violet-500 to-purple-500" },
-    { label: "契約済み", value: confirmedContractCount, href: "/contracts", accent: "from-orange-500 to-rose-500" },
     {
       label: "施工中の案件",
       value: activeProjectCount,
       href: "/projects",
       accent: "from-amber-500 to-orange-500",
     },
+    { label: "見積中", value: estimatingProjectCount, href: "/quotes", accent: "from-violet-500 to-purple-500" },
     { label: "未請求の契約", value: unbilledContractCount, href: "/contracts", accent: "from-rose-500 to-pink-500" },
     { label: "入金待ちの請求書", value: issuedInvoiceCount, href: "/invoices", accent: "from-cyan-500 to-sky-500" },
-    { label: "顧客数", value: customerCount, href: "/customers", accent: "from-indigo-500 to-violet-500" },
-    { label: "見積数", value: quoteCount, href: "/quotes", accent: "from-emerald-500 to-teal-500" },
-    {
-      label: "今月の日報件数",
-      value: monthlyDailyReportCount,
-      href: "/daily-reports",
-      accent: "from-lime-500 to-emerald-500",
-    },
   ];
 
   return (
@@ -183,30 +169,19 @@ export default async function DashboardPage() {
             </Link>
           </Card>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
             {todaysProjects.map((project) => (
-              <Card
+              <Link
                 key={project.id}
-                className="flex flex-col items-center gap-4 bg-gradient-to-br from-slate-50 to-white sm:flex-row sm:justify-between"
+                href={`/projects/${project.id}`}
+                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
-                <div className="text-center sm:text-left">
+                <div>
                   <p className="text-xs text-slate-500">{project.customer.name}</p>
-                  <p className="text-lg font-bold text-slate-900">{project.name}</p>
+                  <p className="font-bold text-slate-900">{project.name}</p>
                 </div>
-                <div className="flex flex-col items-center gap-1.5">
-                  <Link
-                    href={`/voice-entry?projectId=${project.id}`}
-                    className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-4xl text-white shadow-lg shadow-indigo-600/40 transition hover:scale-105"
-                    aria-label="話して記録する"
-                  >
-                    🎤
-                  </Link>
-                  <span className="text-xs font-semibold text-slate-600">話して記録</span>
-                  <Link href={`/projects/${project.id}`} className="text-xs font-medium text-slate-500 underline">
-                    現場を開く
-                  </Link>
-                </div>
-              </Card>
+                <span className="text-sm font-medium text-orange-700 underline">現場を開く</span>
+              </Link>
             ))}
           </div>
         )}
@@ -287,29 +262,32 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <Card>
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-slate-900">はじめに</h2>
-          <Link href="/onboarding" className="text-xs font-medium text-orange-700 underline">
-            すべてのステップを見る
-          </Link>
-        </div>
-        <ol className="mt-2 list-inside list-decimal space-y-1 text-sm text-slate-600">
-          <li>
-            <Link href="/customers/new" className="font-medium text-orange-700 underline">
-              顧客を登録
+      {/* 案件が1件も無い、登録したばかりの会社にだけ案内を出す(慣れた会社には表示しない) */}
+      {projectCount === 0 && (
+        <Card>
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-slate-900">はじめに</h2>
+            <Link href="/onboarding" className="text-xs font-medium text-orange-700 underline">
+              すべてのステップを見る
             </Link>
-            する
-          </li>
-          <li>
-            <Link href="/projects/new" className="font-medium text-orange-700 underline">
-              案件を登録
-            </Link>
-            する
-          </li>
-          <li>案件から見積・契約書・請求書・日報・施工計画書を作成する</li>
-        </ol>
-      </Card>
+          </div>
+          <ol className="mt-2 list-inside list-decimal space-y-1 text-sm text-slate-600">
+            <li>
+              <Link href="/customers/new" className="font-medium text-orange-700 underline">
+                顧客を登録
+              </Link>
+              する
+            </li>
+            <li>
+              <Link href="/projects/new" className="font-medium text-orange-700 underline">
+                案件を登録
+              </Link>
+              する
+            </li>
+            <li>案件から見積・契約書・請求書・日報・施工計画書を作成する</li>
+          </ol>
+        </Card>
+      )}
     </div>
   );
 }
