@@ -38,15 +38,58 @@ export default async function AdminCompanyDetailPage({
     data: { adminId: admin.id, action: "company.view", companyId: company.id },
   });
 
-  // AI利用状況(直近30日)。将来のAIコスト分析・料金プラン検討のための最低限の集計。
+  // 利用状況の集計。将来の継続率・利用率・解約率・AIコスト分析のための最低限の元データ。
+  // AIの利用ログ以外は、単純なSQLの件数集計で出す(LLMは使わない)。
   const thirtyDaysAgo = daysAgo(30);
-  const [aiUsageTotal, aiUsageRecent30d, aiUsageFailures30d] = await Promise.all([
-    prisma.aiUsageLog.count({ where: { companyId: company.id } }),
-    prisma.aiUsageLog.count({ where: { companyId: company.id, createdAt: { gte: thirtyDaysAgo } } }),
+  const cid = company.id;
+  const [
+    aiUsageTotal,
+    aiUsageRecent30d,
+    aiUsageFailures30d,
+    aiTokenAgg,
+    loginTotal,
+    loginRecent30d,
+    dailyReportTotal,
+    dailyReportRecent30d,
+    quoteRecent30d,
+    invoiceTotal,
+    kyTotal,
+    auditLogTotal,
+    lastActivity,
+  ] = await Promise.all([
+    prisma.aiUsageLog.count({ where: { companyId: cid } }),
+    prisma.aiUsageLog.count({ where: { companyId: cid, createdAt: { gte: thirtyDaysAgo } } }),
     prisma.aiUsageLog.count({
-      where: { companyId: company.id, createdAt: { gte: thirtyDaysAgo }, success: false },
+      where: { companyId: cid, createdAt: { gte: thirtyDaysAgo }, success: false },
+    }),
+    prisma.aiUsageLog.aggregate({
+      where: { companyId: cid },
+      _sum: { inputTokens: true, outputTokens: true },
+    }),
+    prisma.auditLog.count({
+      where: { companyId: cid, action: { in: ["auth.login", "auth.login.google"] } },
+    }),
+    prisma.auditLog.count({
+      where: {
+        companyId: cid,
+        action: { in: ["auth.login", "auth.login.google"] },
+        createdAt: { gte: thirtyDaysAgo },
+      },
+    }),
+    prisma.dailyReport.count({ where: { companyId: cid } }),
+    prisma.dailyReport.count({ where: { companyId: cid, createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.quote.count({ where: { companyId: cid, createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.invoice.count({ where: { companyId: cid } }),
+    prisma.kyActivity.count({ where: { companyId: cid } }),
+    prisma.auditLog.count({ where: { companyId: cid } }),
+    prisma.auditLog.findFirst({
+      where: { companyId: cid },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
     }),
   ]);
+  const aiTokensTotal =
+    (aiTokenAgg._sum.inputTokens ?? 0) + (aiTokenAgg._sum.outputTokens ?? 0);
 
   const recentAuditLogs = await prisma.auditLog.findMany({
     where: { companyId: company.id },
@@ -123,23 +166,34 @@ export default async function AdminCompanyDetailPage({
       </Card>
 
       <Card>
-        <h2 className="mb-3 font-semibold text-slate-900">AI利用状況</h2>
-        <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-          <div>
-            <dt className="text-slate-500">AI実行回数(累計)</dt>
-            <dd className="font-medium text-slate-900">{aiUsageTotal}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">直近30日の実行回数</dt>
-            <dd className="font-medium text-slate-900">{aiUsageRecent30d}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">直近30日の失敗回数</dt>
-            <dd className="font-medium text-slate-900">{aiUsageFailures30d}</dd>
-          </div>
+        <h2 className="mb-1 font-semibold text-slate-900">利用状況</h2>
+        <p className="mb-3 text-xs text-slate-500">
+          継続率・利用率・解約率・AI原価を後から分析するための元データです。数字はすべて実データの件数集計です。
+        </p>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
+          {[
+            ["最後の利用", lastActivity ? lastActivity.createdAt.toLocaleString("ja-JP") : "利用なし"],
+            ["ログイン回数(累計)", loginTotal],
+            ["ログイン回数(30日)", loginRecent30d],
+            ["操作回数(累計)", auditLogTotal],
+            ["日報作成(累計)", dailyReportTotal],
+            ["日報作成(30日)", dailyReportRecent30d],
+            ["見積作成(30日)", quoteRecent30d],
+            ["請求書作成(累計)", invoiceTotal],
+            ["KY作成(累計)", kyTotal],
+            ["AI実行回数(累計)", aiUsageTotal],
+            ["AI実行回数(30日)", aiUsageRecent30d],
+            ["AI失敗回数(30日)", aiUsageFailures30d],
+            ["AIトークン数(累計)", aiTokensTotal.toLocaleString()],
+          ].map(([label, value]) => (
+            <div key={String(label)}>
+              <dt className="text-slate-500">{label}</dt>
+              <dd className="font-medium text-slate-900">{value}</dd>
+            </div>
+          ))}
         </dl>
-        <p className="mt-2 text-xs text-slate-500">
-          トークン数・API料金の集計はまだ表示していません(件数が増えてから正しい平均値を出すため)。
+        <p className="mt-3 text-xs text-slate-500">
+          AIトークン数から概算のAPI料金を出す集計は、件数が十分に貯まってから追加します(今は生の件数のみ)。
         </p>
       </Card>
 

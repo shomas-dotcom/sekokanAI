@@ -4,6 +4,7 @@ import { daysAgo } from "@/lib/dateRange";
 
 export default async function AdminDashboardPage() {
   const thirtyDaysAgo = daysAgo(30);
+  const sevenDaysAgo = daysAgo(7);
   const [
     companyCount,
     premiumCount,
@@ -13,6 +14,7 @@ export default async function AdminDashboardPage() {
     payingCompanies,
     aiUsageRecent30d,
     aiUsageFailures30d,
+    activeCompanies7d,
   ] = await Promise.all([
     prisma.company.count(),
     prisma.company.count({ where: { plan: "PREMIUM" } }),
@@ -28,6 +30,14 @@ export default async function AdminDashboardPage() {
     }),
     prisma.aiUsageLog.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
     prisma.aiUsageLog.count({ where: { createdAt: { gte: thirtyDaysAgo }, success: false } }),
+    // 直近7日に何らかの操作(ログイン・登録・作成等)があった会社数 = 実際に使われている会社数
+    prisma.auditLog
+      .findMany({
+        where: { createdAt: { gte: sevenDaysAgo } },
+        select: { companyId: true },
+        distinct: ["companyId"],
+      })
+      .then((rows) => rows.length),
   ]);
 
   const mrr = payingCompanies.reduce((sum, c) => sum + (c.pricingPlan?.monthlyPrice ?? 0), 0);
@@ -36,6 +46,7 @@ export default async function AdminDashboardPage() {
 
   const cards = [
     { label: "登録会社数", value: companyCount },
+    { label: "直近7日に使われた会社数", value: activeCompanies7d },
     { label: "AIプレミアム有効な会社数", value: premiumCount },
     { label: "利用停止中の会社数", value: suspendedCount },
     { label: "利用ユーザー数(退会除く)", value: userCount },
@@ -71,10 +82,10 @@ export default async function AdminDashboardPage() {
 
       <Card className="border-amber-200 bg-amber-50">
         <p className="text-sm font-semibold text-amber-800">
-          無料体験数・解約率・AI使用量・サーバー費用・粗利益はまだ表示できません
+          無料体験数・解約率・サーバー費用・粗利益はまだ表示できません
         </p>
         <p className="mt-1 text-sm text-amber-700">
-          これらは無料体験の期限管理とAI利用量の記録が実装されてから正しい値を出せる項目です(Phase2以降)。まだ実装していないため、数字を作らずここに表示しないでおきます。
+          無料体験の期限管理と、AIトークン数からの概算API料金の計算が実装されてから正しい値を出せる項目です。まだ実装していないため、数字を作らずここに表示しないでおきます(会社ごとの生の利用件数は各社の詳細画面で確認できます)。
         </p>
       </Card>
 
