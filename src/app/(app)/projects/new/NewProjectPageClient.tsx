@@ -58,6 +58,7 @@ export function NewProjectPageClient({
           action={createProjectAction}
           customers={customers}
           submitLabel="登録する"
+          tabsPersistKey="project-new"
           extraTabs={[
             {
               label: "📎 写真・ファイル添付",

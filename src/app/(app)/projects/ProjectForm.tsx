@@ -46,6 +46,7 @@ export function ProjectForm({
   customers,
   submitLabel,
   extraTabs,
+  tabsPersistKey,
 }: {
   action: (state: ProjectFormState, formData: FormData) => Promise<ProjectFormState>;
   project?: Project;
@@ -53,6 +54,8 @@ export function ProjectForm({
   submitLabel: string;
   /** 新規登録画面専用の追加タブ(例: 写真・ファイル添付)。編集画面では渡さないため表示は変わらない。 */
   extraTabs?: { label: string; content: React.ReactNode }[];
+  /** タブ選択をsessionStorageに保存するキー(iPhone Safariでカメラを開いても元のタブに復帰させる) */
+  tabsPersistKey?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, undefined);
 
@@ -181,7 +184,10 @@ export function ProjectForm({
   return (
     <form action={formAction} className="flex flex-col gap-4">
       {extraTabs && extraTabs.length > 0 ? (
-        <Tabs tabs={[{ label: "基本情報", content: fields }, ...extraTabs]} />
+        <Tabs
+          tabs={[{ label: "基本情報", content: fields }, ...extraTabs]}
+          persistKey={tabsPersistKey}
+        />
       ) : (
         fields
       )}

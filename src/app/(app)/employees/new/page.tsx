@@ -58,6 +58,7 @@ export default function NewEmployeePage() {
       <div className="max-w-lg">
         <Tabs
           initialActive={prefillTranscript ? 2 : 0}
+          persistKey="employee-new"
           tabs={[
             {
               label: "📷 写真添付",

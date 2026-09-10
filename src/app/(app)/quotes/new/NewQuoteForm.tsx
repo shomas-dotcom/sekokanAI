@@ -20,6 +20,7 @@ export function NewQuoteForm({
   return (
     <form action={formAction} className="flex flex-col gap-4">
       <Tabs
+        persistKey="quote-new"
         tabs={[
           {
             label: "基本情報",

@@ -49,6 +49,7 @@ export default function NewCustomerPage() {
       <div className="max-w-lg">
         <Tabs
           initialActive={prefillTranscript ? 2 : 0}
+          persistKey="customer-new"
           tabs={[
             {
               label: "📷 写真添付",
