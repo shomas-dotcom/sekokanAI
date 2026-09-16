@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { validateImageFile, validateAudioFile, MAX_IMAGE_BYTES, MAX_AUDIO_BYTES } from "@/lib/fileValidation";
+import {
+  validateImageFile,
+  validateAudioFile,
+  validateDocumentFile,
+  MAX_IMAGE_BYTES,
+  MAX_AUDIO_BYTES,
+} from "@/lib/fileValidation";
 
 describe("validateImageFile", () => {
   it("許可された画像形式は通す", () => {
@@ -26,6 +32,25 @@ describe("validateImageFile", () => {
 
   it("上限サイズちょうどは許可する", () => {
     expect(validateImageFile({ type: "image/jpeg", size: MAX_IMAGE_BYTES })).toBeNull();
+  });
+});
+
+describe("validateDocumentFile", () => {
+  it("CSVを添付できる(text/csv、application/csv、text/plainのいずれでも通す)", () => {
+    expect(validateDocumentFile({ type: "text/csv", size: 1000 })).toBeNull();
+    expect(validateDocumentFile({ type: "application/csv", size: 1000 })).toBeNull();
+    expect(validateDocumentFile({ type: "text/plain", size: 1000 })).toBeNull();
+  });
+
+  it("PDF・Excel・Word・HEIC写真も引き続き添付できる", () => {
+    expect(validateDocumentFile({ type: "application/pdf", size: 1000 })).toBeNull();
+    expect(
+      validateDocumentFile({
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        size: 1000,
+      })
+    ).toBeNull();
+    expect(validateDocumentFile({ type: "image/heic", size: 1000 })).toBeNull();
   });
 });
 

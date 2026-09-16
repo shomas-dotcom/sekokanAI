@@ -87,7 +87,11 @@ export function BusinessCardScanner({
           ref={inputRef}
           type="file"
           name="image"
-          accept={mode === "camera" ? "image/jpeg,image/png,image/webp" : "image/jpeg,image/png,image/webp,application/pdf"}
+          accept={
+            mode === "camera"
+              ? "image/jpeg,image/png,image/webp,image/heic,image/heif"
+              : "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
+          }
           capture={mode === "camera" ? "environment" : undefined}
           className="hidden"
           onChange={(e) => submit(e.target)}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useRef, useState } from "react";
 import { createQuoteAction } from "../actions";
 import { Input, Select, Textarea, Button, FieldLabel } from "@/components/ui";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
@@ -16,6 +16,7 @@ export function NewQuoteForm({
 }) {
   const [state, formAction, pending] = useActionState(createQuoteAction, undefined);
   const freeTextRef = useRef<HTMLTextAreaElement>(null);
+  const [attachedNames, setAttachedNames] = useState<string[]>([]);
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -71,10 +72,18 @@ export function NewQuoteForm({
                     type="file"
                     name="files"
                     multiple
-                    accept="image/jpeg,image/png,image/webp,application/pdf,.xlsx,.xls,.docx,.doc"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.xlsx,.xls,.csv,.docx,.doc"
                     className="text-sm"
+                    onChange={(e) => setAttachedNames(Array.from(e.target.files ?? []).map((f) => f.name))}
                   />
                 </FieldLabel>
+                {attachedNames.length > 0 && (
+                  <ul className="text-xs text-slate-500">
+                    {attachedNames.map((name) => (
+                      <li key={name}>📄 {name}</li>
+                    ))}
+                  </ul>
+                )}
                 <span className="text-xs text-slate-400">
                   ここで選んだ写真・資料は、見積の「ファイル参照」欄に保存されます(内容をAIが読み取ることはありません)。後からでも追加できます。
                 </span>

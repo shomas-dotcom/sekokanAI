@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { validateImageFile, validateVisionImageFile } from "@/lib/fileValidation";
+import { convertHeicToJpegIfNeeded } from "@/lib/imageConversion";
 import { suggestPhotoMetadataFromImage, type PhotoMetadataExtraction } from "@/lib/ai";
 
 export type PhotoFormState = { error?: string } | undefined;
@@ -27,14 +28,24 @@ export async function suggestPhotoMetadataAction(
   if (!(file instanceof File) || file.size === 0) {
     return { error: "写真を選択してください。" };
   }
-  const validationError = validateVisionImageFile(file);
+
+  // iPhoneの初期設定(HEIC/HEIF)はAIが直接読み取れないため、先にJPEGへの変換を
+  // 試みる。変換できなければ元のファイルのまま検証に進み、従来どおりの案内を出す。
+  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
+  let mimeType = file.type;
+  const converted = await convertHeicToJpegIfNeeded(buffer, mimeType);
+  if (converted) {
+    buffer = converted.buffer;
+    mimeType = converted.mimeType;
+  }
+
+  const validationError = validateVisionImageFile({ type: mimeType, size: buffer.length });
   if (validationError) return { error: validationError };
 
-  const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
   const suggestion = await suggestPhotoMetadataFromImage(
     base64,
-    file.type as "image/jpeg" | "image/png" | "image/webp",
+    mimeType as "image/jpeg" | "image/png" | "image/webp",
     { companyId: user.companyId, userId: user.id, feature: "photo.suggestMetadata" }
   );
 

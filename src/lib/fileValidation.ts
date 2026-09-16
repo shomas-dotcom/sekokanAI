@@ -24,13 +24,19 @@ export const ALLOWED_DOCUMENT_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  // CSVはOS・ブラウザによって申告されるMIMEが揺れる(text/csv以外にapplication/csv、
+  // 一部のWindows環境ではapplication/vnd.ms-excelとして扱われることもある)ため、
+  // よく見る候補を並べておく。
+  "text/csv",
+  "application/csv",
+  "text/plain",
   ...ALLOWED_IMAGE_MIME_TYPES,
 ];
 export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024; // 20MB(見積書PDF・写真つきExcel等を想定した上限)
 
 export function validateDocumentFile(file: { type: string; size: number }): string | null {
   if (!ALLOWED_DOCUMENT_MIME_TYPES.includes(file.type)) {
-    return "対応していないファイル形式です(PDF・Excel・Word・画像のいずれかを選択してください)。";
+    return "対応していないファイル形式です(PDF・Excel・CSV・Word・画像のいずれかを選択してください)。";
   }
   if (file.size <= 0) {
     return "ファイルが空です。";

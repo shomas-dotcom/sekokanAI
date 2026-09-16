@@ -58,7 +58,7 @@ export function AiIntakeWidget() {
           ref={cameraInputRef}
           type="file"
           name="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           capture="environment"
           className="hidden"
           onChange={(e) => submitFile(e.target)}
@@ -67,7 +67,7 @@ export function AiIntakeWidget() {
           ref={fileInputRef}
           type="file"
           name="file"
-          accept="image/jpeg,image/png,image/webp,application/pdf"
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
           className="hidden"
           onChange={(e) => submitFile(e.target)}
         />

@@ -13,6 +13,7 @@ import {
   type IdCardExtraction,
 } from "@/lib/ai";
 import { validateAiDocumentFile } from "@/lib/fileValidation";
+import { convertHeicToJpegIfNeeded } from "@/lib/imageConversion";
 import type { EmploymentType } from "@/generated/prisma/enums";
 
 export type EmployeeFormState = { error?: string } | undefined;
@@ -207,16 +208,26 @@ export async function scanIdCardAction(
   if (!(file instanceof File) || file.size === 0) {
     return { error: "身分証の画像またはPDFを選択してください。" };
   }
-  const validationError = validateAiDocumentFile(file);
+
+  // iPhoneの初期設定(HEIC/HEIF)はAIが直接読み取れないため、先にJPEGへの変換を
+  // 試みる。変換できなければ元のファイルのまま検証に進み、従来どおりの案内を出す。
+  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
+  let mimeType = file.type;
+  const converted = await convertHeicToJpegIfNeeded(buffer, mimeType);
+  if (converted) {
+    buffer = converted.buffer;
+    mimeType = converted.mimeType;
+  }
+
+  const validationError = validateAiDocumentFile({ type: mimeType, size: buffer.length });
   if (validationError) return { error: validationError };
 
-  const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
   const usageContext = { companyId: user.companyId, userId: user.id, feature: "idCard.scan" };
   const extraction =
-    file.type === "application/pdf"
+    mimeType === "application/pdf"
       ? await extractIdCardFromPdf(base64, usageContext)
-      : await extractIdCardFromImage(base64, file.type as "image/jpeg" | "image/png" | "image/webp", usageContext);
+      : await extractIdCardFromImage(base64, mimeType as "image/jpeg" | "image/png" | "image/webp", usageContext);
 
   if (extraction.confidence === "unavailable") {
     return {
