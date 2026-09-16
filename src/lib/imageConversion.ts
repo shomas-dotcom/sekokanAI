@@ -32,3 +32,59 @@ export async function convertHeicToJpegIfNeeded(
     return null;
   }
 }
+
+// 最近のiPhoneは1枚あたり12〜48メガピクセル(長辺4000〜8000px超)の写真を撮る。
+// AI(Vision)にはそこまでの解像度は不要な一方、サーバー側でそのまま抱えると
+// メモリ使用量・通信量・処理時間が無駄に大きくなる(本番はRenderの無料枠=メモリの
+// 少ないインスタンスで動いているため、これが「ページを読み込めませんでした」という
+// 接続断・タイムアウトの一因になっている可能性がある)。
+// そのため、HEIC変換に加えて「長辺が一定以上なら縮小する」処理をここに集約する。
+const MAX_VISION_IMAGE_DIMENSION = 2000; // px。この程度でもAIの読み取り精度への影響は小さい
+
+/**
+ * AI(Vision)へ渡す直前の画像を、①HEIC/HEIFならJPEGへ変換し、②大きすぎる場合は
+ * 縮小する。どちらの処理も失敗した場合は例外を投げず、可能な範囲(元のバッファ)を
+ * 返す — 呼び出し側の検証(validateVisionImageFile等)にそのまま進ませ、
+ * 最終的には既存の「読み取れませんでした」という案内にフォールバックさせるため。
+ *
+ * 保存用(EntityFile・ProjectFile・DailyReportPhoto等)の画像はここを通さない
+ * (現場の記録用に、選んだ写真をそのまま保存する)。
+ */
+export async function prepareImageForVision(
+  buffer: Buffer,
+  mimeType: string
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  let workingBuffer = buffer;
+  let workingType = mimeType;
+
+  if (mimeType === "image/heic" || mimeType === "image/heif") {
+    const converted = await convertHeicToJpegIfNeeded(buffer, mimeType);
+    if (!converted) return { buffer, mimeType }; // 変換不可。元のまま返し既存の案内に委ねる
+    workingBuffer = converted.buffer;
+    workingType = converted.mimeType;
+  }
+
+  try {
+    const metadata = await sharp(workingBuffer).metadata();
+    const longSide = Math.max(metadata.width ?? 0, metadata.height ?? 0);
+    if (longSide > MAX_VISION_IMAGE_DIMENSION) {
+      const resized = await sharp(workingBuffer)
+        .rotate()
+        .resize({
+          width: MAX_VISION_IMAGE_DIMENSION,
+          height: MAX_VISION_IMAGE_DIMENSION,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      return { buffer: resized, mimeType: "image/jpeg" };
+    }
+  } catch (err) {
+    // 縮小に失敗しても致命的にはしない。元のサイズのまま後続の処理へ進める
+    // (これまでどおりの動作に留まるだけで、新たに壊れるわけではない)。
+    console.error("[imageConversion] 画像の縮小をスキップしました", err);
+  }
+
+  return { buffer: workingBuffer, mimeType: workingType };
+}

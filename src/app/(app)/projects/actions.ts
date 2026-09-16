@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { validateAiDocumentFile, validateDocumentFile } from "@/lib/fileValidation";
-import { convertHeicToJpegIfNeeded } from "@/lib/imageConversion";
+import { prepareImageForVision } from "@/lib/imageConversion";
 import {
   extractProjectRequestFromText,
   extractProjectRequestFromImage,
@@ -248,14 +248,15 @@ export async function scanProjectRequestAction(
   let extraction: ProjectRequestExtraction;
 
   if (file instanceof File && file.size > 0) {
-    // iPhoneの初期設定(HEIC/HEIF)はAIが直接読み取れないため、先にJPEGへの変換を
-    // 試みる。変換できなければ元のファイルのまま検証に進み、従来どおりの案内を出す。
+    // iPhoneの初期設定(HEIC/HEIF)はAIが直接読み取れないため先にJPEGへ変換し、
+    // あわせて大きすぎる写真は縮小する(メモリ・通信量を減らし、処理が重くなって
+    // 接続が切れるのを防ぐ)。PDFはそのまま(画像処理の対象外)。
     let buffer: Buffer = Buffer.from(await file.arrayBuffer());
     let mimeType = file.type;
-    const converted = await convertHeicToJpegIfNeeded(buffer, mimeType);
-    if (converted) {
-      buffer = converted.buffer;
-      mimeType = converted.mimeType;
+    if (mimeType !== "application/pdf") {
+      const prepared = await prepareImageForVision(buffer, mimeType);
+      buffer = prepared.buffer;
+      mimeType = prepared.mimeType;
     }
 
     const validationError = validateAiDocumentFile({ type: mimeType, size: buffer.length });
