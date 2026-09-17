@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { validateDocumentFile } from "@/lib/fileValidation";
+import { prepareImageForStorage } from "@/lib/imageConversion";
 
 export type ProjectFileFormState = { error?: string } | undefined;
 
@@ -35,15 +36,21 @@ export async function uploadProjectFileAction(
   }
 
   for (const file of files) {
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // HEIC/HEIFはiPhone以外の端末(Android・Windows等)のブラウザで表示できないことが
+    // 多いため、社内の他の人も開けるようJPEGへ変換してから保存する。
+    const { buffer, mimeType, fileName } = await prepareImageForStorage(
+      Buffer.from(await file.arrayBuffer()),
+      file.type,
+      file.name
+    );
     const saved = await prisma.projectFile.create({
       data: {
         companyId: user.companyId,
         projectId,
-        fileName: file.name,
-        mimeType: file.type,
+        fileName,
+        mimeType,
         data: buffer,
-        size: file.size,
+        size: buffer.length,
       },
     });
     await logAction({

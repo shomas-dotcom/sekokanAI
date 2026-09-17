@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { validateImageFile, validateVisionImageFile } from "@/lib/fileValidation";
-import { prepareImageForVision } from "@/lib/imageConversion";
+import { prepareImageForVision, prepareImageForStorage } from "@/lib/imageConversion";
 import { suggestPhotoMetadataFromImage, type PhotoMetadataExtraction } from "@/lib/ai";
 
 export type PhotoFormState = { error?: string } | undefined;
@@ -86,7 +86,13 @@ export async function uploadPhotoAction(
   if (!report) return { error: "日報が見つかりません。" };
 
   const sortOrder = await prisma.dailyReportPhoto.count({ where: { dailyReportId } });
-  const buffer = Buffer.from(await file.arrayBuffer());
+  // HEIC/HEIFはiPhone以外の端末(Android・Windows等)のブラウザで表示できないことが
+  // 多いため、社内の他の人も開けるようJPEGへ変換してから保存する。
+  const { buffer, mimeType } = await prepareImageForStorage(
+    Buffer.from(await file.arrayBuffer()),
+    file.type,
+    file.name
+  );
 
   // EXIFのDateTimeOriginalはクライアント側(exifr)で抽出し、hidden inputで渡す。
   // 取得できなければアップロード時刻をそのまま使う(断定はしない)。
@@ -97,7 +103,7 @@ export async function uploadPhotoAction(
       dailyReportId,
       companyId: user.companyId,
       data: buffer,
-      mimeType: file.type,
+      mimeType,
       phase,
       caption,
       takenAt,

@@ -88,3 +88,24 @@ export async function prepareImageForVision(
 
   return { buffer: workingBuffer, mimeType: workingType };
 }
+
+/**
+ * 保存用(EntityFile・ProjectFile・DailyReportPhoto等)にHEIC/HEIFをJPEGへ変換する。
+ * iPhoneで撮ったHEIC写真は、Android・Windows・Chrome等の他の端末のブラウザでは
+ * 表示できないことが多く、「会社内で共有したのに開けない」原因になる。
+ * 解像度はprepareImageForVisionと違って縮小しない(現場記録として保存する写真の
+ * 画質はそのまま残す)。変換に失敗した場合は元のファイルのまま返す(保存自体は止めない)。
+ */
+export async function prepareImageForStorage(buffer: Buffer<ArrayBuffer>, mimeType: string, fileName: string) {
+  const converted = await convertHeicToJpegIfNeeded(buffer, mimeType);
+  if (!converted) return { buffer, mimeType, fileName };
+  // convertHeicToJpegIfNeededが返すバッファはsharp由来でBuffer<ArrayBufferLike>型になるため、
+  // DBのバイナリ列(Prisma)が要求するBuffer<ArrayBuffer>へ詰め直す。
+  const arrayBuffer = new ArrayBuffer(converted.buffer.byteLength);
+  new Uint8Array(arrayBuffer).set(converted.buffer);
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    mimeType: converted.mimeType,
+    fileName: fileName.replace(/\.(heic|heif)$/i, ".jpg"),
+  };
+}

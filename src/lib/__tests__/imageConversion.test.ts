@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { convertHeicToJpegIfNeeded, prepareImageForVision } from "@/lib/imageConversion";
+import {
+  convertHeicToJpegIfNeeded,
+  prepareImageForVision,
+  prepareImageForStorage,
+} from "@/lib/imageConversion";
 
 describe("convertHeicToJpegIfNeeded", () => {
   it("HEIC/HEIF以外の形式はそのままnullを返す(変換を試みない)", async () => {
@@ -79,5 +83,36 @@ describe("prepareImageForVision", () => {
     const metadata = await sharp(result.buffer).metadata();
     expect(metadata.format).toBe("jpeg");
     expect(Math.max(metadata.width ?? 0, metadata.height ?? 0)).toBeLessThanOrEqual(2000);
+  });
+});
+
+describe("prepareImageForStorage", () => {
+  it("HEIC/HEIF以外はそのまま(ファイル名も変えない)", async () => {
+    const jpeg = await sharp({
+      create: { width: 50, height: 50, channels: 3, background: { r: 0, g: 0, b: 0 } },
+    })
+      .jpeg()
+      .toBuffer();
+
+    const result = await prepareImageForStorage(jpeg, "image/jpeg", "写真.jpg");
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(result.fileName).toBe("写真.jpg");
+    expect(result.buffer).toBe(jpeg);
+  });
+
+  it("HEIFは保存用にJPEGへ変換し、拡張子も.jpgへ変える(解像度は縮小しない)", async () => {
+    const heif = await sharp({
+      create: { width: 2500, height: 1800, channels: 3, background: { r: 50, g: 100, b: 150 } },
+    })
+      .heif({ compression: "av1" })
+      .toBuffer();
+
+    const result = await prepareImageForStorage(heif, "image/heic", "IMG_0001.HEIC");
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(result.fileName).toBe("IMG_0001.jpg");
+    const metadata = await sharp(result.buffer).metadata();
+    expect(metadata.format).toBe("jpeg");
+    expect(metadata.width).toBe(2500);
+    expect(metadata.height).toBe(1800);
   });
 });
