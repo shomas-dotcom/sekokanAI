@@ -57,7 +57,7 @@ export function AiIntakeWidget() {
         <input
           ref={cameraInputRef}
           type="file"
-          name="file"
+          name="cameraFile"
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           capture="environment"
           className="hidden"

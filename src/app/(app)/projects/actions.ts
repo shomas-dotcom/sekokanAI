@@ -242,7 +242,11 @@ export async function scanProjectRequestAction(
 ): Promise<ProjectRequestScanState> {
   const user = await requireUser();
   const transcript = String(formData.get("transcript") ?? "").trim();
-  const file = formData.get("file");
+  // 「撮影」と「ファイル」で入力欄を分けているため、実際に中身が入っている方を使う
+  // (片方が空でも、同名の欄が複数あるとブラウザは常に先の欄を優先して送ってしまうため)。
+  const file = [formData.get("file"), formData.get("cameraFile")].find(
+    (f): f is File => f instanceof File && f.size > 0
+  );
   const usageContext = { companyId: user.companyId, userId: user.id, feature: "projectRequest.scan" };
 
   let extraction: ProjectRequestExtraction;
