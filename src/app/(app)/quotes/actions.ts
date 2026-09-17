@@ -10,6 +10,7 @@ import { draftQuoteItemsFromText } from "@/lib/ai";
 import { advanceProjectStatus } from "@/lib/projectStatus";
 import { defaultQuoteExpirationDate } from "@/lib/rateMaster";
 import { validateDocumentFile } from "@/lib/fileValidation";
+import { prepareImageForStorage } from "@/lib/imageConversion";
 import type { PriceSource, RateCategory } from "@/generated/prisma/enums";
 
 const RATE_CATEGORIES: RateCategory[] = [
@@ -111,16 +112,22 @@ export async function createQuoteAction(
   // 「写真・ファイル添付」タブで選ばれたファイルを、見積の「ファイル参照」欄へ保存する
   // (uploadEntityFileActionと同じ保存先・同じ検証を、作成と同じ画面で済ませられるようにしたもの)。
   for (const file of attachedFiles) {
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // HEIC/HEIFはiPhone以外の端末(Android・Windows等)のブラウザで表示できないことが
+    // 多いため、社内の他の人も開けるようJPEGへ変換してから保存する。
+    const { buffer, mimeType, fileName } = await prepareImageForStorage(
+      Buffer.from(await file.arrayBuffer()),
+      file.type,
+      file.name
+    );
     const saved = await prisma.entityFile.create({
       data: {
         companyId: user.companyId,
         entityType: "QUOTE",
         entityId: quote.id,
-        fileName: file.name,
-        mimeType: file.type,
+        fileName,
+        mimeType,
         data: buffer,
-        size: file.size,
+        size: buffer.length,
       },
     });
     await logAction({
