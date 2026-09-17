@@ -55,6 +55,35 @@ export async function assignCompanyPlanAction(formData: FormData) {
   redirect(`/admin/companies/${companyId}`);
 }
 
+// 会社を選ばず各自でログイン画面から新規登録すると、その人専用の新しい会社が
+// 作られてしまい、本来同じ会社の同僚とデータを共有できない状態になる
+// (settings/team側の招待は既存メールアドレスを拒否するため、後から招待し直せない)。
+// この操作は、そうして誤って1人だけの会社になってしまった利用者を、正しい
+// 会社へ付け替える救済処置。安全のため「移動元の会社に他の利用者がいない」
+// 場合のみ許可し(複数人いる会社を巻き込んで壊さないため)、移動元の空の
+// 会社はそのまま削除する。
+export async function moveUserIntoCompanyAction(formData: FormData) {
+  const admin = await requirePlatformAdmin();
+  const companyId = String(formData.get("companyId") ?? "");
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: { company: { include: { _count: { select: { users: true } } } } },
+  });
+  if (!user) redirect(`/admin/companies/${companyId}?userMoveError=not_found`);
+  if (user!.companyId === companyId) redirect(`/admin/companies/${companyId}?userMoveError=already_member`);
+  if (user!.company._count.users > 1) redirect(`/admin/companies/${companyId}?userMoveError=not_alone`);
+
+  const oldCompanyId = user!.companyId;
+  await prisma.user.update({ where: { id: user!.id }, data: { companyId, role: "MEMBER" } });
+  await prisma.company.delete({ where: { id: oldCompanyId } });
+  await logAdminAction(admin.id, `user.move:${email}`, companyId);
+
+  revalidatePath(`/admin/companies/${companyId}`);
+  redirect(`/admin/companies/${companyId}`);
+}
+
 // 契約会社に対する商談・問い合わせ履歴を1件追記する(削除・編集は今回のスコープ外)。
 export async function addCompanyNoteAction(formData: FormData) {
   const admin = await requirePlatformAdmin();

@@ -6,18 +6,28 @@ import {
   resumeCompanyAction,
   assignCompanyPlanAction,
   addCompanyNoteAction,
+  moveUserIntoCompanyAction,
 } from "../../actions";
-import { Card, Textarea, Select, Button, Badge } from "@/components/ui";
+import { Card, Textarea, Select, Input, Button, Badge } from "@/components/ui";
 import { daysAgo } from "@/lib/dateRange";
 
 const NOTE_TYPE_LABEL: Record<string, string> = { MEETING: "商談", INQUIRY: "問い合わせ" };
 
+const USER_MOVE_ERROR_MESSAGE: Record<string, string> = {
+  not_found: "そのメールアドレスの利用者は見つかりません。",
+  already_member: "その利用者は、すでにこの会社に所属しています。",
+  not_alone: "移動元の会社に他の利用者もいるため、この操作はできません(巻き込んで動かさないための安全策)。",
+};
+
 export default async function AdminCompanyDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ userMoveError?: string }>;
 }) {
   const { id } = await params;
+  const { userMoveError } = await searchParams;
   const admin = await requirePlatformAdmin();
 
   const company = await prisma.company.findUnique({
@@ -254,6 +264,29 @@ export default async function AdminCompanyDetailPage({
           <Textarea name="content" rows={3} placeholder="例: 無料体験の延長を希望、来週再商談の予定" required />
           <Button type="submit" variant="secondary" className="w-fit">
             記録を追加
+          </Button>
+        </form>
+      </Card>
+
+      <Card>
+        <h2 className="mb-1 font-semibold text-slate-900">利用者をこの会社へ移動</h2>
+        <p className="mb-3 text-xs text-slate-500">
+          会社を選ばず各自でログイン画面から新規登録してしまい、1人だけの別会社になっている利用者を、
+          このメールアドレスでこの会社へ移動します(移動元の空になった会社は削除されます)。
+        </p>
+        {userMoveError && USER_MOVE_ERROR_MESSAGE[userMoveError] && (
+          <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {USER_MOVE_ERROR_MESSAGE[userMoveError]}
+          </p>
+        )}
+        <form action={moveUserIntoCompanyAction} className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="companyId" value={company.id} />
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-700">
+            メールアドレス
+            <Input type="email" name="email" required placeholder="taro@example.com" />
+          </label>
+          <Button type="submit" variant="secondary">
+            この会社へ移動する
           </Button>
         </form>
       </Card>
