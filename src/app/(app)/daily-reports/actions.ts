@@ -6,6 +6,8 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { draftDailyReportFromText } from "@/lib/ai";
+import { jstWallTimeToUtc, computeWorkMinutes } from "@/lib/timesheet/time";
+import type { DailyReportWorkerType } from "@/generated/prisma/enums";
 
 export type DailyReportFormState = { error?: string } | undefined;
 
@@ -146,4 +148,227 @@ export async function deleteDailyReportAction(formData: FormData) {
 
   revalidatePath("/daily-reports");
   redirect("/daily-reports");
+}
+
+const WORKER_TYPES: DailyReportWorkerType[] = ["EMPLOYEE", "PARTNER", "SUBCONTRACTOR", "MANUAL"];
+
+/**
+ * 日報の作業員明細を追加する(自社従業員はマスタから選択、協力会社・外注・手入力は
+ * 直接入力)。既存の「作業員数」「職長」は削除せず、明細からここで自動計算して同期する
+ * (過去の日報表示は変えない。明細が1件もない日報は従来どおりの値のまま)。
+ */
+export async function addDailyReportWorkerAction(formData: FormData) {
+  const user = await requireUser();
+  const dailyReportId = String(formData.get("dailyReportId") ?? "");
+
+  const report = await prisma.dailyReport.findFirst({ where: { id: dailyReportId, companyId: user.companyId } });
+  if (!report) redirect("/daily-reports");
+
+  const workerTypeRaw = String(formData.get("workerType") ?? "EMPLOYEE");
+  const workerType: DailyReportWorkerType = WORKER_TYPES.includes(workerTypeRaw as DailyReportWorkerType)
+    ? (workerTypeRaw as DailyReportWorkerType)
+    : "EMPLOYEE";
+  const employeeIdRaw = String(formData.get("employeeId") ?? "").trim() || null;
+  const manualName = String(formData.get("workerName") ?? "").trim();
+
+  let employeeId: string | null = null;
+  let workerName: string;
+  if (workerType === "EMPLOYEE" && employeeIdRaw) {
+    const employee = await prisma.employee.findFirst({ where: { id: employeeIdRaw, companyId: user.companyId } });
+    if (!employee) {
+      revalidatePath(`/daily-reports/${dailyReportId}`);
+      return;
+    }
+    employeeId = employee.id;
+    workerName = employee.name;
+  } else {
+    if (!manualName) {
+      revalidatePath(`/daily-reports/${dailyReportId}`);
+      return;
+    }
+    workerName = manualName;
+  }
+
+  const role = String(formData.get("role") ?? "").trim() || null;
+  const startTime = String(formData.get("startTime") ?? "").trim() || null;
+  const endTime = String(formData.get("endTime") ?? "").trim() || null;
+  const breakMinutesStr = String(formData.get("breakMinutes") ?? "").trim();
+  const breakMinutes = breakMinutesStr ? Number(breakMinutesStr) : 0;
+  const manDaysStr = String(formData.get("manDays") ?? "").trim();
+  const workDescription = String(formData.get("workDescription") ?? "").trim() || null;
+  const isForeman = formData.get("isForeman") === "on";
+  const isBillable = formData.get("isBillable") === "on";
+  const reflectToAttendance = formData.get("reflectToAttendance") === "on";
+  const reflectToSiteAttendance = formData.get("reflectToSiteAttendance") === "on";
+  const workMinutes = computeWorkMinutes(startTime, endTime, breakMinutes);
+  const sortOrder = await prisma.dailyReportWorker.count({ where: { dailyReportId } });
+
+  const worker = await prisma.$transaction(async (tx) => {
+    if (isForeman) {
+      await tx.dailyReportWorker.updateMany({ where: { dailyReportId }, data: { isForeman: false } });
+    }
+    return tx.dailyReportWorker.create({
+      data: {
+        companyId: user.companyId,
+        dailyReportId,
+        employeeId,
+        workerName,
+        workerType,
+        role,
+        startTime,
+        endTime,
+        breakMinutes,
+        workMinutes,
+        manDays: manDaysStr ? Number(manDaysStr) : null,
+        workDescription,
+        isBillable,
+        isForeman,
+        reflectToAttendance,
+        reflectToSiteAttendance,
+        sortOrder,
+      },
+    });
+  });
+
+  // 作業員数・職長を既存項目(互換表示用)へ同期する
+  const workerCount = await prisma.dailyReportWorker.count({ where: { dailyReportId } });
+  const foreman = await prisma.dailyReportWorker.findFirst({ where: { dailyReportId, isForeman: true } });
+  await prisma.dailyReport.update({
+    where: { id: dailyReportId },
+    data: { workerCount, foremanName: foreman?.workerName ?? report.foremanName },
+  });
+
+  await logAction({
+    companyId: user.companyId,
+    userId: user.id,
+    action: "laborEntry.create",
+    targetType: "DailyReportWorker",
+    targetId: worker.id,
+  });
+
+  await reflectDailyReportWorker(worker.id, { id: user.id, companyId: user.companyId });
+
+  revalidatePath(`/daily-reports/${dailyReportId}`);
+}
+
+export async function deleteDailyReportWorkerAction(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get("id") ?? "");
+  const dailyReportId = String(formData.get("dailyReportId") ?? "");
+
+  const report = await prisma.dailyReport.findFirst({ where: { id: dailyReportId, companyId: user.companyId } });
+  if (!report) redirect("/daily-reports");
+
+  await prisma.dailyReportWorker.deleteMany({ where: { id, dailyReportId } });
+
+  const workerCount = await prisma.dailyReportWorker.count({ where: { dailyReportId } });
+  const foreman = await prisma.dailyReportWorker.findFirst({ where: { dailyReportId, isForeman: true } });
+  await prisma.dailyReport.update({
+    where: { id: dailyReportId },
+    data: workerCount > 0 ? { workerCount, foremanName: foreman?.workerName ?? null } : {},
+  });
+
+  revalidatePath(`/daily-reports/${dailyReportId}`);
+}
+
+/**
+ * 作業員明細を勤怠(自社従業員のみ・従業員×日付で1件)・出面(全種別、明細ごとに1件)へ反映する。
+ * 反映先がすでに承認済み(APPROVED)・締め済み(CLOSED)の場合は上書きしない
+ * (給与・請求の確定後に日報の修正で勝手に変わらないようにするため)。
+ */
+async function reflectDailyReportWorker(workerId: string, actor: { id: string; companyId: string }) {
+  const worker = await prisma.dailyReportWorker.findUnique({
+    where: { id: workerId },
+    include: { dailyReport: true },
+  });
+  if (!worker) return;
+
+  const clockIn = worker.startTime ? jstWallTimeToUtc(worker.dailyReport.reportDate, worker.startTime) : null;
+  const clockOut = worker.endTime ? jstWallTimeToUtc(worker.dailyReport.reportDate, worker.endTime) : null;
+
+  if (worker.reflectToAttendance && worker.employeeId) {
+    const existing = await prisma.attendance.findUnique({
+      where: { employeeId_targetDate: { employeeId: worker.employeeId, targetDate: worker.dailyReport.reportDate } },
+    });
+    if (!existing) {
+      const created = await prisma.attendance.create({
+        data: {
+          companyId: actor.companyId,
+          employeeId: worker.employeeId,
+          targetDate: worker.dailyReport.reportDate,
+          sourceDailyReportId: worker.dailyReportId,
+          clockInTime: clockIn,
+          clockOutTime: clockOut,
+          siteArrivalTime: clockIn,
+          siteDepartureTime: clockOut,
+          breakMinutes: worker.breakMinutes ?? 0,
+          actualWorkMinutes: worker.workMinutes,
+          createdByUserId: actor.id,
+        },
+      });
+      await prisma.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: created.id } });
+      await logAction({
+        companyId: actor.companyId,
+        userId: actor.id,
+        action: "attendance.create",
+        targetType: "Attendance",
+        targetId: created.id,
+      });
+    } else if (existing.status === "DRAFT" || existing.status === "REJECTED") {
+      await prisma.attendance.update({
+        where: { id: existing.id },
+        data: {
+          sourceDailyReportId: worker.dailyReportId,
+          clockInTime: clockIn ?? existing.clockInTime,
+          clockOutTime: clockOut ?? existing.clockOutTime,
+          siteArrivalTime: clockIn ?? existing.siteArrivalTime,
+          siteDepartureTime: clockOut ?? existing.siteDepartureTime,
+          breakMinutes: worker.breakMinutes ?? existing.breakMinutes,
+          actualWorkMinutes: worker.workMinutes ?? existing.actualWorkMinutes,
+          updatedByUserId: actor.id,
+        },
+      });
+      await prisma.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
+      await logAction({
+        companyId: actor.companyId,
+        userId: actor.id,
+        action: "attendance.update",
+        targetType: "Attendance",
+        targetId: existing.id,
+      });
+    } else {
+      // 承認済み・締め済み: 上書きしない。表示用にリンクだけ張る(画面側で「反映済み(承認済み)」等と示す)
+      await prisma.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
+    }
+  }
+
+  if (worker.reflectToSiteAttendance) {
+    const created = await prisma.siteAttendance.create({
+      data: {
+        companyId: actor.companyId,
+        targetDate: worker.dailyReport.reportDate,
+        projectId: worker.dailyReport.projectId,
+        sourceDailyReportId: worker.dailyReportId,
+        employeeId: worker.employeeId,
+        workerName: worker.workerName,
+        jobType: worker.role,
+        workContent: worker.workDescription,
+        startTime: clockIn,
+        endTime: clockOut,
+        breakMinutes: worker.breakMinutes ?? 0,
+        workMinutes: worker.workMinutes,
+        manDays: worker.manDays ?? 1,
+        isBillable: worker.isBillable,
+        createdByUserId: actor.id,
+      },
+    });
+    await prisma.dailyReportWorker.update({ where: { id: worker.id }, data: { siteAttendanceId: created.id } });
+    await logAction({
+      companyId: actor.companyId,
+      userId: actor.id,
+      action: "laborEntry.create",
+      targetType: "SiteAttendance",
+      targetId: created.id,
+    });
+  }
 }

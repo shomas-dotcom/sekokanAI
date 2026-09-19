@@ -1385,6 +1385,7 @@ model DailyReportWorker {
   manDays           Float?
   workDescription   String?
   isBillable        Boolean               @default(true)
+  isForeman         Boolean               @default(false) // 職長。1日報につき1人までをアプリ側で担保する
   reflectToAttendance     Boolean         @default(true) // 勤怠へ反映するか
   reflectToSiteAttendance Boolean         @default(true) // 出面へ反映するか
   // 反映済みのAttendance/SiteAttendanceへのリンク(反映状況・承認状態の表示に使う)。

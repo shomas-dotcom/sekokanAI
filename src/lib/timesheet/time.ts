@@ -38,3 +38,17 @@ export function formatJstDateTime(date: Date | null | undefined): string {
 export function jstStartOfDay(year: number, month1to12: number, day: number): Date {
   return new Date(Date.UTC(year, month1to12 - 1, day - 0, -9, 0));
 }
+
+/** "HH:mm"の開始・終了と休憩分数から実働分数を計算する。不正な入力・逆転はnullを返す。 */
+export function computeWorkMinutes(
+  startTime: string | null,
+  endTime: string | null,
+  breakMinutes: number
+): number | null {
+  if (!startTime || !endTime) return null;
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return null;
+  const minutes = eh * 60 + em - (sh * 60 + sm) - breakMinutes;
+  return minutes > 0 ? minutes : null;
+}
