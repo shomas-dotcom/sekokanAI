@@ -50,7 +50,7 @@ export default async function CostLedgerPage({ params }: { params: Promise<{ id:
       </div>
 
       <Card>
-        <h2 className="font-semibold text-slate-900">氏名・単価・残業・職種</h2>
+        <h2 className="font-semibold text-slate-900">氏名・単価・残業・職種・作業内容</h2>
         <table className="mt-3 w-full text-left text-sm">
           <thead className="text-slate-500">
             <tr>
@@ -58,6 +58,7 @@ export default async function CostLedgerPage({ params }: { params: Promise<{ id:
               <th className="py-1 pr-2">単価</th>
               <th className="py-1 pr-2">残業(h)</th>
               <th className="py-1 pr-2">職種</th>
+              <th className="py-1 pr-2">作業内容</th>
               <th className="py-1"></th>
             </tr>
           </thead>
@@ -68,6 +69,7 @@ export default async function CostLedgerPage({ params }: { params: Promise<{ id:
                 <td className="py-1 pr-2">{e.unitPrice?.toLocaleString("ja-JP") ?? "—"}</td>
                 <td className="py-1 pr-2">{e.overtimeHours ?? "—"}</td>
                 <td className="py-1 pr-2">{e.jobType ?? "—"}</td>
+                <td className="py-1 pr-2">{e.workDescription ?? "—"}</td>
                 <td className="py-1">
                   <form action={deleteLaborEntryAction}>
                     <input type="hidden" name="id" value={e.id} />
@@ -87,6 +89,7 @@ export default async function CostLedgerPage({ params }: { params: Promise<{ id:
           <Input name="unitPrice" type="number" placeholder="単価" className="w-24" />
           <Input name="overtimeHours" type="number" step="0.5" placeholder="残業(h)" className="w-24" />
           <Input name="jobType" placeholder="職種" className="w-28" />
+          <Input name="workDescription" placeholder="作業内容" className="w-40" />
           <Button type="submit" variant="secondary">
             + 追加
           </Button>

@@ -674,6 +674,8 @@ model DailyReportLaborEntry {
   unitPrice     Int? // 単価(日当)
   overtimeHours Float?
   jobType       String? // 職種
+  workDescription String? // 作業内容(2026-09追記。元のExcel様式にはない欄だが、誰が何をしたかを
+  // 個別に残したいという要望のため追加。原価集計表(Excel)の物理様式は変えないため出力しない)
 
   @@index([dailyReportId])
 }

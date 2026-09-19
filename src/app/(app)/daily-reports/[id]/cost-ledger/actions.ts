@@ -28,6 +28,7 @@ export async function addLaborEntryAction(formData: FormData) {
   const unitPriceStr = String(formData.get("unitPrice") ?? "").trim();
   const overtimeHoursStr = String(formData.get("overtimeHours") ?? "").trim();
   const jobType = String(formData.get("jobType") ?? "").trim() || null;
+  const workDescription = String(formData.get("workDescription") ?? "").trim() || null;
   const sortOrder = await prisma.dailyReportLaborEntry.count({ where: { dailyReportId } });
 
   const entry = await prisma.dailyReportLaborEntry.create({
@@ -38,6 +39,7 @@ export async function addLaborEntryAction(formData: FormData) {
       unitPrice: unitPriceStr ? Number(unitPriceStr) : null,
       overtimeHours: overtimeHoursStr ? Number(overtimeHoursStr) : null,
       jobType,
+      workDescription,
     },
   });
   await logAction({
