@@ -39,6 +39,65 @@ export function jstStartOfDay(year: number, month1to12: number, day: number): Da
   return new Date(Date.UTC(year, month1to12 - 1, day - 0, -9, 0));
 }
 
+function hhmmToMinutes(hhmm: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+/**
+ * 日本時間の壁時計時刻(分, 0〜1439)を、出勤時刻を基準とした連続した分数へ変換する
+ * (退勤が出勤より前=日をまたいだとみなし、+1440する)。
+ */
+function jstMinutesOfDay(date: Date): number {
+  const hhmm = formatJstTime(date); // "HH:mm"
+  return hhmmToMinutes(hhmm) ?? 0;
+}
+
+/**
+ * 出勤〜退勤のうち、深夜帯(既定22:00〜翌5:00)に重なる分数を計算する。
+ * 会社設定のnightShiftStartTime/nightShiftEndTimeを日をまたぐ区間として扱う。
+ */
+export function computeNightShiftMinutes(
+  clockInTime: Date | null,
+  clockOutTime: Date | null,
+  nightShiftStartTime: string,
+  nightShiftEndTime: string
+): number | null {
+  if (!clockInTime || !clockOutTime) return null;
+  const start = jstMinutesOfDay(clockInTime);
+  let end = jstMinutesOfDay(clockOutTime);
+  if (end <= start) end += 1440; // 日をまたぐ勤務
+
+  const nightStart = hhmmToMinutes(nightShiftStartTime) ?? 22 * 60;
+  const nightEnd = hhmmToMinutes(nightShiftEndTime) ?? 5 * 60;
+
+  // 深夜帯(当日分: nightStart〜1440、翌日分: 1440+0〜1440+nightEnd)との重なりを合計する
+  const overlap = (aStart: number, aEnd: number, bStart: number, bEnd: number) =>
+    Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
+
+  const todayNight = overlap(start, end, nightStart, 1440);
+  const tomorrowNight = overlap(start, end, 1440, 1440 + nightEnd);
+  return todayNight + tomorrowNight;
+}
+
+/** 会社設定に基づき、実働時間を普通勤務・残業・休日勤務に振り分ける。 */
+export function computeAttendanceBreakdown(params: {
+  actualWorkMinutes: number | null;
+  workCategory: string;
+  scheduledWorkMinutes: number;
+}): { normalWorkMinutes: number | null; overtimeMinutes: number | null; holidayWorkMinutes: number | null } {
+  const { actualWorkMinutes, workCategory, scheduledWorkMinutes } = params;
+  if (actualWorkMinutes == null) return { normalWorkMinutes: null, overtimeMinutes: null, holidayWorkMinutes: null };
+
+  if (workCategory === "HOLIDAY_WORK") {
+    return { normalWorkMinutes: 0, overtimeMinutes: 0, holidayWorkMinutes: actualWorkMinutes };
+  }
+  const normalWorkMinutes = Math.min(actualWorkMinutes, scheduledWorkMinutes);
+  const overtimeMinutes = Math.max(0, actualWorkMinutes - scheduledWorkMinutes);
+  return { normalWorkMinutes, overtimeMinutes, holidayWorkMinutes: 0 };
+}
+
 /** "HH:mm"の開始・終了と休憩分数から実働分数を計算する。不正な入力・逆転はnullを返す。 */
 export function computeWorkMinutes(
   startTime: string | null,

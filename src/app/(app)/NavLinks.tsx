@@ -14,6 +14,7 @@ const NAV = [
   { href: "/contracts", label: "契約" },
   { href: "/invoices", label: "請求" },
   { href: "/daily-reports", label: "日報" },
+  { href: "/attendance", label: "自分の勤怠" },
   { href: "/ky", label: "KY" },
   { href: "/work-items", label: "作業内容マスタ" },
   { href: "/construction-plans", label: "施工計画書" },
@@ -23,7 +24,14 @@ const NAV = [
 
 export function NavLinks({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
-  const items = isAdmin ? [...NAV, { href: "/settings", label: "会社設定" }] : NAV;
+  const items = isAdmin
+    ? [
+        ...NAV,
+        { href: "/attendance-management", label: "勤怠管理" },
+        { href: "/site-attendance", label: "出面・常用集計" },
+        { href: "/settings", label: "会社設定" },
+      ]
+    : NAV;
 
   return (
     <nav className="mx-auto flex max-w-5xl items-center gap-1 overflow-x-auto px-4 pb-2 text-sm">

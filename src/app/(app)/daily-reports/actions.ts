@@ -6,7 +6,8 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { draftDailyReportFromText } from "@/lib/ai";
-import { jstWallTimeToUtc, computeWorkMinutes } from "@/lib/timesheet/time";
+import { jstWallTimeToUtc, computeWorkMinutes, computeAttendanceBreakdown, computeNightShiftMinutes } from "@/lib/timesheet/time";
+import { getOrCreateWorkSettings } from "@/lib/timesheet/settings";
 import type { DailyReportWorkerType } from "@/generated/prisma/enums";
 
 export type DailyReportFormState = { error?: string } | undefined;
@@ -287,6 +288,21 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
   const clockOut = worker.endTime ? jstWallTimeToUtc(worker.dailyReport.reportDate, worker.endTime) : null;
 
   if (worker.reflectToAttendance && worker.employeeId) {
+    const settings = await getOrCreateWorkSettings(actor.companyId);
+    // 日報からの反映では休日出勤・有給等の区分までは分からないため、いったん通常勤務として
+    // 普通/残業時間を計算する(区分の修正は勤怠の確認・承認画面で行う想定)。
+    const breakdown = computeAttendanceBreakdown({
+      actualWorkMinutes: worker.workMinutes,
+      workCategory: "NORMAL",
+      scheduledWorkMinutes: settings.scheduledWorkMinutes,
+    });
+    const nightShiftMinutes = computeNightShiftMinutes(
+      clockIn,
+      clockOut,
+      settings.nightShiftStartTime,
+      settings.nightShiftEndTime
+    );
+
     const existing = await prisma.attendance.findUnique({
       where: { employeeId_targetDate: { employeeId: worker.employeeId, targetDate: worker.dailyReport.reportDate } },
     });
@@ -303,6 +319,9 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
           siteDepartureTime: clockOut,
           breakMinutes: worker.breakMinutes ?? 0,
           actualWorkMinutes: worker.workMinutes,
+          normalWorkMinutes: breakdown.normalWorkMinutes,
+          overtimeMinutes: breakdown.overtimeMinutes,
+          nightShiftMinutes,
           createdByUserId: actor.id,
         },
       });
@@ -321,6 +340,9 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
           sourceDailyReportId: worker.dailyReportId,
           clockInTime: clockIn ?? existing.clockInTime,
           clockOutTime: clockOut ?? existing.clockOutTime,
+          normalWorkMinutes: breakdown.normalWorkMinutes ?? existing.normalWorkMinutes,
+          overtimeMinutes: breakdown.overtimeMinutes ?? existing.overtimeMinutes,
+          nightShiftMinutes: nightShiftMinutes ?? existing.nightShiftMinutes,
           siteArrivalTime: clockIn ?? existing.siteArrivalTime,
           siteDepartureTime: clockOut ?? existing.siteDepartureTime,
           breakMinutes: worker.breakMinutes ?? existing.breakMinutes,
