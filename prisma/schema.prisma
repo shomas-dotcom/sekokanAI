@@ -19,6 +19,7 @@ datasource db {
 enum UserRole {
   ADMIN
   MEMBER
+  SITE_MANAGER // 現場責任者(2026-09追記)。担当現場に限定した日報閲覧・出面一次承認を行う
 }
 
 // フリーミアム化(2026-08-04追記)。既存会社の動作を変えないため、
@@ -95,6 +96,11 @@ model Company {
   pricingPlan               Plan?                    @relation(fields: [pricingPlanId], references: [id])
   notes                     CompanyNote[]
   aiUsageLogs               AiUsageLog[]
+  workSettings              CompanyWorkSettings?
+  attendances               Attendance[]
+  siteAttendances           SiteAttendance[]
+  siteExpenseEntries        SiteExpenseEntry[]
+  timesheetChangeLogs       TimesheetChangeLog[]
 }
 
 // Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
@@ -172,6 +178,7 @@ model RateMasterItem {
   updatedAt    DateTime                 @updatedAt
   priceHistory RateMasterPriceHistory[]
   quoteItems   QuoteItem[]
+  siteExpenseEntries SiteExpenseEntry[]
 
   @@index([companyId])
 }
@@ -223,6 +230,8 @@ model Employee {
   updatedAt      DateTime                @updatedAt
   qualifications EmployeeQualification[]
   projectMembers ProjectMember[]
+  attendances    Attendance[]
+  siteAttendances SiteAttendance[]
 
   @@index([companyId])
 }
@@ -277,6 +286,15 @@ model User {
   sessions            Session[]
   verificationTokens  VerificationToken[]
   aiUsageLogs         AiUsageLog[]
+  supervisedProjects  ProjectSupervisor[]
+  createdAttendances  Attendance[]        @relation("AttendanceCreatedBy")
+  updatedAttendances  Attendance[]        @relation("AttendanceUpdatedBy")
+  approvedAttendances Attendance[]        @relation("AttendanceApprovedBy")
+  createdSiteAttendances  SiteAttendance[] @relation("SiteAttendanceCreatedBy")
+  updatedSiteAttendances  SiteAttendance[] @relation("SiteAttendanceUpdatedBy")
+  approvedSiteAttendances SiteAttendance[] @relation("SiteAttendanceApprovedBy")
+  createdSiteExpenseEntries SiteExpenseEntry[]
+  timesheetChangeLogs TimesheetChangeLog[]
 
   @@index([companyId])
 }
@@ -414,9 +432,27 @@ model Project {
   members                    ProjectMember[]
   kyActivities               KyActivity[]
   files                      ProjectFile[]
+  supervisors                ProjectSupervisor[]
+  siteAttendances            SiteAttendance[]
+  siteExpenseEntries         SiteExpenseEntry[]
 
   @@index([companyId])
   @@index([customerId])
+}
+
+// 現場責任者(User)がどの現場を担当するかの割り当て。ProjectMember(Employeeの現場配属名簿)とは
+// 別物 — こちらはログインアカウント(User)に対する「閲覧・一次承認できる範囲」の権限スコープ。
+model ProjectSupervisor {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
 }
 
 // 現場に紐づく参考資料(過去の見積書・仕様書等)。写真とは別枠で、PDF/Excel/Word等の
@@ -573,6 +609,11 @@ model DailyReport {
   laborEntries DailyReportLaborEntry[]
   ownItems     DailyReportOwnItem[]
   partnerItems DailyReportPartnerItem[]
+  // 勤怠・出面は日報から自動作成されるが、日報を編集・削除しても給与/請求の根拠である
+  // これらのレコードは変わらないよう、独立データとして保存する(onDelete: SetNull)。
+  attendances        Attendance[]
+  siteAttendances    SiteAttendance[]
+  siteExpenseEntries SiteExpenseEntry[]
 
   @@index([companyId])
   @@index([projectId])
@@ -1029,4 +1070,259 @@ model AiUsageLog {
   @@index([companyId])
   @@index([companyId, createdAt])
   @@index([userId])
+}
+
+// --- 勤怠・出面管理(2026-09追記) ---------------------------------------------
+//
+// 日報から勤怠(給与計算の根拠)と出面(元請請求・現場原価の根拠)を自動作成するが、
+// 日報が後から編集・削除されても給与/請求の根拠は変わってはならないため、
+// DB上は日報から独立したデータとして保存する(sourceDailyReportIdはonDelete: SetNull、
+// 日報が消えても勤怠・出面のレコード自体は残る)。
+// 元請は既存Project.primeContractorName(自由入力)をそのまま使い、新規の元請マスタは作らない
+// (実装前確認Q1の回答どおり)。従業員は自社の従業員マスタ(Employee)から選ぶことを基本としつつ、
+// マスタに登録のない協力会社等はworkerNameへの直接入力で代替する(実装前確認Q2の回答どおり)。
+
+enum TimeRoundingUnit {
+  NONE
+  ROUND_5MIN
+  ROUND_10MIN
+  ROUND_15MIN
+  ROUND_30MIN
+}
+
+enum OvertimeCalcMethod {
+  DAILY_EIGHT_HOURS // 1日8時間(法定労働時間)を超えた分を残業とする
+  SCHEDULED_HOURS // 会社の所定労働時間を超えた分を残業とする
+}
+
+// 会社ごとの勤務設定。計算ルールをコードへ固定せず、ここから調整できるようにする。
+model CompanyWorkSettings {
+  id                                  String             @id @default(cuid())
+  companyId                           String             @unique
+  company                             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  scheduledStartTime                  String             @default("08:00") // "HH:mm"
+  scheduledEndTime                    String             @default("17:00")
+  scheduledBreakMinutes               Int                @default(120)
+  scheduledWorkMinutes                Int                @default(480) // 1日の所定労働時間(分)
+  closingDay                          Int                @default(31) // 締日(1〜31。31=月末)
+  holidayWeekdaysJson                 String             @default("[0]") // 休日の曜日。0=日曜〜6=土曜のJSON配列
+  overtimeCalcMethod                  OvertimeCalcMethod @default(DAILY_EIGHT_HOURS)
+  nightShiftStartTime                 String             @default("22:00")
+  nightShiftEndTime                   String             @default("05:00")
+  timeRounding                        TimeRoundingUnit   @default(NONE)
+  amountRoundingMode                  RoundingMode       @default(ROUND)
+  maxManDaysPerDay                    Float? // 1人1日あたりの人工数上限(警告用。任意)
+  autoCreateAttendanceFromDailyReport Boolean            @default(true)
+  attendanceApprovalRequired          Boolean            @default(true)
+  siteAttendanceApprovalRequired      Boolean            @default(true)
+  createdAt                           DateTime           @default(now())
+  updatedAt                           DateTime           @updatedAt
+}
+
+enum WorkCategory {
+  NORMAL // 通常勤務
+  HOLIDAY_WORK // 休日出勤
+  PAID_LEAVE // 有給
+  HALF_DAY_LEAVE // 半休
+  ABSENCE // 欠勤
+  LATE // 遅刻
+  EARLY_LEAVE // 早退
+}
+
+enum TimesheetStatus {
+  DRAFT // 下書き
+  SUBMITTED // 提出済み
+  APPROVED // 承認済み
+  REJECTED // 差し戻し
+  CLOSED // 締め済み
+}
+
+// 勤怠(給与計算の根拠)。1従業員・1日につき1件(複数現場に入った場合も出面側で分けて記録し、
+// 勤怠は合算した1日分として扱う)。
+model Attendance {
+  id                  String           @id @default(cuid())
+  companyId           String
+  company             Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId          String
+  employee            Employee         @relation(fields: [employeeId], references: [id])
+  targetDate          DateTime
+  clockInTime         DateTime?
+  clockOutTime        DateTime?
+  siteArrivalTime     DateTime?
+  siteDepartureTime   DateTime?
+  breakMinutes        Int              @default(0)
+  actualWorkMinutes   Int? // 実働時間
+  normalWorkMinutes   Int? // 普通勤務時間
+  overtimeMinutes     Int? // 残業時間
+  nightShiftMinutes   Int? // 深夜勤務時間
+  holidayWorkMinutes  Int? // 休日勤務時間
+  workCategory        WorkCategory     @default(NORMAL)
+  isPaidLeave         Boolean          @default(false)
+  isAbsence           Boolean          @default(false)
+  isLate              Boolean          @default(false)
+  isEarlyLeave        Boolean          @default(false)
+  remarks             String?
+  sourceDailyReportId String?
+  sourceDailyReport   DailyReport?     @relation(fields: [sourceDailyReportId], references: [id], onDelete: SetNull)
+  status              TimesheetStatus  @default(DRAFT)
+  submittedAt         DateTime?
+  approvedByUserId    String?
+  approvedByUser      User?            @relation("AttendanceApprovedBy", fields: [approvedByUserId], references: [id])
+  approvedAt          DateTime?
+  rejectionReason     String?
+  closedAt            DateTime?
+  closedByUserId      String?
+  reopenedAt          DateTime?
+  reopenReason         String?
+  createdByUserId     String
+  createdByUser       User             @relation("AttendanceCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUserId     String?
+  updatedByUser       User?            @relation("AttendanceUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@unique([employeeId, targetDate])
+  @@index([companyId])
+  @@index([companyId, targetDate])
+  @@index([employeeId])
+}
+
+enum ManDayUnit {
+  QUARTER // 0.25人工
+  HALF // 0.5人工
+  THREE_QUARTER // 0.75人工
+  FULL // 1人工
+  CUSTOM // 任意入力
+}
+
+// 出面(元請への請求・現場原価の根拠)。1人が1日に複数現場へ入れるよう、
+// 従業員×日付の組み合わせに一意制約はかけない(重複はアプリ側で検知し警告する)。
+model SiteAttendance {
+  id                  String           @id @default(cuid())
+  companyId           String
+  company             Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  targetDate          DateTime
+  projectId           String
+  project             Project          @relation(fields: [projectId], references: [id])
+  sourceDailyReportId String?
+  sourceDailyReport   DailyReport?     @relation(fields: [sourceDailyReportId], references: [id], onDelete: SetNull)
+  employeeId          String?
+  employee            Employee?        @relation(fields: [employeeId], references: [id])
+  // 従業員マスタに登録のない協力会社等はここへ直接入力する(employeeId設定時はEmployee.nameの
+  // スナップショットとして保持し、後から従業員名が変わっても当時の記録を変えない)。
+  workerName          String
+  jobType             String? // 職種
+  workContent         String?
+  startTime           DateTime?
+  endTime             DateTime?
+  breakMinutes        Int              @default(0)
+  workMinutes         Int?
+  manDayUnit          ManDayUnit       @default(FULL)
+  manDays             Float // 実際の人工数(0.25刻み、または任意入力の値)
+  manDayUnitPrice     Int? // 人工単価(従業員には非表示、権限管理で制御)
+  amount              Int? // 人工金額 = manDays × manDayUnitPrice
+  isBillable          Boolean          @default(true) // 請求対象
+  isCostTarget        Boolean          @default(true) // 原価対象
+  remarks             String?
+  status              TimesheetStatus  @default(DRAFT)
+  submittedAt         DateTime?
+  approvedByUserId    String?
+  approvedByUser      User?            @relation("SiteAttendanceApprovedBy", fields: [approvedByUserId], references: [id])
+  approvedAt          DateTime?
+  rejectionReason     String?
+  closedAt            DateTime?
+  createdByUserId     String
+  createdByUser       User             @relation("SiteAttendanceCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUserId     String?
+  updatedByUser       User?            @relation("SiteAttendanceUpdatedBy", fields: [updatedByUserId], references: [id])
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, targetDate])
+  @@index([projectId])
+  @@index([employeeId])
+}
+
+enum SiteExpenseCategory {
+  VEHICLE // 車両
+  MACHINERY // 重機
+  MATERIAL // 材料
+  TRANSPORT // 回送
+  TRAVEL_EXPENSE // 交通費
+  OTHER
+}
+
+// 出面に関連する車両・重機・経費の明細。現場・日付単位(複数の作業員で共有するため、
+// SiteAttendance1件ずつではなくProject×日付に紐づける)。
+model SiteExpenseEntry {
+  id                  String              @id @default(cuid())
+  companyId           String
+  company             Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  targetDate          DateTime
+  projectId           String
+  project             Project             @relation(fields: [projectId], references: [id])
+  sourceDailyReportId String?
+  sourceDailyReport   DailyReport?        @relation(fields: [sourceDailyReportId], references: [id], onDelete: SetNull)
+  rateMasterItemId    String? // 単価マスタ参照(任意。既存のRateMasterItemを流用し、新規マスタは作らない)
+  rateMasterItem      RateMasterItem?     @relation(fields: [rateMasterItemId], references: [id], onDelete: SetNull)
+  category            SiteExpenseCategory
+  name                String
+  quantity            Float               @default(1) // 台数・常用数量
+  usageHours          Float? // 使用時間
+  unit                String?
+  unitPrice           Int?
+  amount              Int?
+  dispatchFee         Int? // 回送費
+  tollFee             Int? // 高速代
+  parkingFee          Int? // 駐車場代
+  otherFee            Int?
+  isBillable          Boolean             @default(true)
+  isCostTarget        Boolean             @default(true)
+  remarks             String?
+  status              TimesheetStatus     @default(DRAFT)
+  createdByUserId     String
+  createdByUser       User                @relation(fields: [createdByUserId], references: [id])
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, targetDate])
+  @@index([projectId])
+}
+
+enum TimesheetEntityType {
+  ATTENDANCE
+  SITE_ATTENDANCE
+}
+
+enum TimesheetChangeType {
+  CREATE
+  UPDATE
+  SUBMIT
+  APPROVE
+  REJECT
+  CLOSE
+  REOPEN
+}
+
+// 勤怠・出面の変更履歴。給与・請求に関わるため、AuditLog(操作ログ全般)とは別に
+// 変更前後の値そのものを記録する(1テーブルにまとめ、種類はentityTypeで区別する。
+// 対象ごとに似たテーブルを複数作らない)。
+model TimesheetChangeLog {
+  id              String              @id @default(cuid())
+  companyId       String
+  company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  entityType      TimesheetEntityType
+  entityId        String
+  changeType      TimesheetChangeType
+  beforeJson      String?
+  afterJson       String?
+  reason          String? // 差し戻し理由・締め解除理由等
+  changedByUserId String
+  changedByUser   User                @relation(fields: [changedByUserId], references: [id])
+  createdAt       DateTime            @default(now())
+
+  @@index([companyId])
+  @@index([entityType, entityId])
 }
