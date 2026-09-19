@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import {
@@ -238,4 +238,71 @@ export async function scanIdCardAction(
   }
 
   return { extraction };
+}
+
+export type EmployeeUserLinkState = { error?: string } | undefined;
+
+/**
+ * ログイン利用者(User)と従業員マスタ(Employee)を関連付ける(勤怠機能の前提)。
+ * 氏名・メールアドレスでの突き合わせは事故のもとになるため使わず、必ず管理者が
+ * 明示的にこの画面で紐付ける。同一従業員に対し有効な(退会していない)利用者を
+ * 複数紐付けることはできない(アプリ側で検証する。DBのunique制約にしないのは、
+ * 退会したUserのemployeeIdは記録としてそのまま残すため)。
+ */
+export async function linkEmployeeToUserAction(
+  _prevState: EmployeeUserLinkState,
+  formData: FormData
+): Promise<EmployeeUserLinkState> {
+  const admin = await requireAdmin();
+  const employeeId = String(formData.get("employeeId") ?? "");
+  const userId = String(formData.get("userId") ?? "");
+
+  const employee = await prisma.employee.findFirst({ where: { id: employeeId, companyId: admin.companyId } });
+  if (!employee) return { error: "従業員が見つかりません。" };
+
+  const targetUser = await prisma.user.findFirst({
+    where: { id: userId, companyId: admin.companyId, deletedAt: null },
+  });
+  if (!targetUser) return { error: "利用者が見つかりません。" };
+
+  const alreadyLinked = await prisma.user.findFirst({
+    where: { employeeId, deletedAt: null, NOT: { id: userId } },
+  });
+  if (alreadyLinked) {
+    return { error: `この従業員はすでに別の利用者(${alreadyLinked.name})に関連付けられています。` };
+  }
+
+  await prisma.user.update({ where: { id: userId }, data: { employeeId } });
+  await logAction({
+    companyId: admin.companyId,
+    userId: admin.id,
+    action: "user.linkEmployee",
+    targetType: "User",
+    targetId: userId,
+  });
+
+  revalidatePath(`/employees/${employeeId}`);
+  revalidatePath("/settings");
+  return undefined;
+}
+
+export async function unlinkEmployeeFromUserAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const userId = String(formData.get("userId") ?? "");
+  const employeeId = String(formData.get("employeeId") ?? "");
+
+  await prisma.user.updateMany({
+    where: { id: userId, companyId: admin.companyId },
+    data: { employeeId: null },
+  });
+  await logAction({
+    companyId: admin.companyId,
+    userId: admin.id,
+    action: "user.unlinkEmployee",
+    targetType: "User",
+    targetId: userId,
+  });
+
+  revalidatePath(`/employees/${employeeId}`);
+  revalidatePath("/settings");
 }

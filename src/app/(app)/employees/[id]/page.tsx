@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { EmployeeForm } from "../EmployeeForm";
 import { updateEmployeeAction, deleteEmployeeAction } from "../actions";
 import { QualificationSection } from "./QualificationSection";
+import { EmployeeUserLinkSection } from "./EmployeeUserLinkSection";
 import { Card, Button } from "@/components/ui";
 import { Tabs } from "@/components/Tabs";
 import { EntityFileSection } from "@/components/entityFiles/EntityFileSection";
@@ -15,7 +16,7 @@ export default async function EmployeeDetailPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  const [employee, files] = await Promise.all([
+  const [employee, files, linkedUser, candidateUsers] = await Promise.all([
     prisma.employee.findFirst({
       where: { id, companyId: user.companyId },
       include: { qualifications: { orderBy: { createdAt: "desc" } } },
@@ -23,6 +24,15 @@ export default async function EmployeeDetailPage({
     prisma.entityFile.findMany({
       where: { entityType: "EMPLOYEE", entityId: id, companyId: user.companyId },
       orderBy: { createdAt: "desc" },
+    }),
+    prisma.user.findFirst({
+      where: { employeeId: id, companyId: user.companyId, deletedAt: null },
+      select: { id: true, name: true, email: true },
+    }),
+    prisma.user.findMany({
+      where: { companyId: user.companyId, deletedAt: null, employeeId: null },
+      select: { id: true, name: true, email: true },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
   if (!employee) notFound();
@@ -43,6 +53,19 @@ export default async function EmployeeDetailPage({
                   <h2 className="mb-3 font-semibold text-slate-900">保有資格</h2>
                   <QualificationSection employeeId={employee.id} qualifications={employee.qualifications} />
                 </Card>
+                {user.role === "ADMIN" && (
+                  <Card>
+                    <h2 className="mb-1 font-semibold text-slate-900">ログイン利用者との関連付け</h2>
+                    <p className="mb-3 text-xs text-slate-500">
+                      勤怠・出面の機能で「本人が自分の記録だけを操作できる」ようにするための設定です。
+                    </p>
+                    <EmployeeUserLinkSection
+                      employeeId={employee.id}
+                      linkedUser={linkedUser}
+                      candidates={candidateUsers}
+                    />
+                  </Card>
+                )}
                 <form action={deleteEmployeeAction}>
                   <input type="hidden" name="id" value={employee.id} />
                   <Button type="submit" variant="danger">

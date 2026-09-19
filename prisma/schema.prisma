@@ -101,6 +101,7 @@ model Company {
   siteAttendances           SiteAttendance[]
   siteExpenseEntries        SiteExpenseEntry[]
   timesheetChangeLogs       TimesheetChangeLog[]
+  dailyReportWorkers        DailyReportWorker[]
 }
 
 // Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
@@ -232,6 +233,11 @@ model Employee {
   projectMembers ProjectMember[]
   attendances    Attendance[]
   siteAttendances SiteAttendance[]
+  dailyReportWorkers DailyReportWorker[]
+  // 1人の従業員につき、有効な(退会していない)利用者アカウントは同時に1つまでに限定する。
+  // 退会後も過去の勤怠記録からは辿れるよう、DB上のunique制約ではなくアプリ側(User作成/更新時)
+  // で検証する(退会済みUserのemployeeIdは残したままにするため)。
+  linkedUsers    User[]
 
   @@index([companyId])
 }
@@ -275,6 +281,11 @@ model User {
   googleId            String?             @unique // GoogleのユーザーID(sub)。連携済みの場合のみ設定
   name                String
   role                UserRole            @default(MEMBER)
+  // ログイン利用者と従業員マスタ(Employee)の紐付け(2026-09追記)。氏名・メールアドレスでの
+  // 突き合わせは事故のもとになるため使わず、必ずこのIDで一意に特定する。同一従業員に対し
+  // 有効な(deletedAtがない)Userを複数紐付けないことはアプリ側で検証する(下記コメント参照)。
+  employeeId          String?
+  employee            Employee?           @relation(fields: [employeeId], references: [id])
   emailVerifiedAt     DateTime? // null=メール未認証。未認証でもログイン自体は妨げない(画面上で案内のみ)
   failedLoginAttempts Int                 @default(0) // ブルートフォース対策。ログイン成功で0に戻す
   lockedUntil         DateTime? // この日時までログイン試行を拒否する
@@ -297,6 +308,7 @@ model User {
   timesheetChangeLogs TimesheetChangeLog[]
 
   @@index([companyId])
+  @@index([employeeId])
 }
 
 // サービス運営者(杉本本人等)専用のアカウント。会社(Company)には一切紐付かない
@@ -614,6 +626,9 @@ model DailyReport {
   attendances        Attendance[]
   siteAttendances    SiteAttendance[]
   siteExpenseEntries SiteExpenseEntry[]
+  // 日報ごとの作業員明細(誰が何時間・何人工入ったか)。既存の「作業員数」文字列項目は残しつつ、
+  // ここに明細がある場合はここから人数を自動計算する(既存日報の互換性を壊さないため)。
+  workers            DailyReportWorker[]
 
   @@index([companyId])
   @@index([projectId])
@@ -1180,6 +1195,9 @@ model Attendance {
   updatedByUser       User?            @relation("AttendanceUpdatedBy", fields: [updatedByUserId], references: [id])
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
+  // 1つの勤怠(従業員×日付)に対し、複数の日報の作業員明細が反映されることがある
+  // (同じ人が同じ日に複数現場の日報へ登場した場合、勤怠としては1日分に合算されるため)。
+  dailyReportWorkers  DailyReportWorker[]
 
   @@unique([employeeId, targetDate])
   @@index([companyId])
@@ -1237,6 +1255,8 @@ model SiteAttendance {
   updatedByUser       User?            @relation("SiteAttendanceUpdatedBy", fields: [updatedByUserId], references: [id])
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
+  // 出面1件は必ず1つの日報作業員明細から作られる(こちらは1:1)。
+  dailyReportWorker   DailyReportWorker?
 
   @@index([companyId])
   @@index([companyId, targetDate])
@@ -1325,4 +1345,59 @@ model TimesheetChangeLog {
 
   @@index([companyId])
   @@index([entityType, entityId])
+}
+
+enum DailyReportWorkerType {
+  EMPLOYEE // 自社従業員
+  PARTNER // 協力会社
+  SUBCONTRACTOR // 外注
+  MANUAL // 手入力作業員(マスタ未登録)
+}
+
+// 日報ごとの作業員明細。既存の日報にあった「作業員数(人数のみ)」「職長(氏名のみ)」を
+// 置き換えるのではなく、明細を追加してそこから人数を自動計算する形にする(過去日報を
+// 変更しない・既存表示を壊さないため。明細がない過去日報は従来どおりworkerCount/
+// foremanNameの表示のままにする)。
+// 日報を編集している間はこの明細を直接書き換えられるが、いったんAttendance/SiteAttendance
+// へ反映(reflectToAttendance/reflectToSiteAttendanceがtrueの状態で保存)された後は、
+// 反映先が承認済み(APPROVED)・締め済み(CLOSED)の場合は自動上書きせず、
+// 「再反映が必要な候補」として画面上で示す(サーバー側の反映処理で判定する)。
+model DailyReportWorker {
+  id                String                @id @default(cuid())
+  companyId         String
+  company           Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dailyReportId     String
+  dailyReport       DailyReport           @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  employeeId        String?
+  employee          Employee?             @relation(fields: [employeeId], references: [id])
+  // 従業員マスタ未登録(協力会社・外注・手入力)の場合の表示名。employeeId設定時はEmployee.nameの
+  // スナップショット(後から従業員名が変わっても当時の記録を変えない)。
+  workerName        String
+  workerType        DailyReportWorkerType @default(EMPLOYEE)
+  role              String? // 職種・役割(現場での職種。従業員マスタのposition=会社上の役職とは別)
+  startTime         String? // "HH:mm"。未入力なら日報全体の開始時間を初期値として使う
+  endTime           String?
+  breakMinutes      Int?
+  workMinutes       Int?
+  overtimeMinutes   Int?
+  manDays           Float?
+  workDescription   String?
+  isBillable        Boolean               @default(true)
+  reflectToAttendance     Boolean         @default(true) // 勤怠へ反映するか
+  reflectToSiteAttendance Boolean         @default(true) // 出面へ反映するか
+  // 反映済みのAttendance/SiteAttendanceへのリンク(反映状況・承認状態の表示に使う)。
+  // Attendanceは従業員×日付で1件のため、同じ人が同日複数現場に入ると複数のDailyReportWorkerが
+  // 同じAttendanceを指すことがある(そのため一意制約はつけない)。SiteAttendanceは1明細=1件。
+  attendanceId      String?
+  attendance        Attendance?           @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  siteAttendanceId  String?               @unique
+  siteAttendance    SiteAttendance?       @relation(fields: [siteAttendanceId], references: [id], onDelete: SetNull)
+  sortOrder         Int                   @default(0)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([companyId])
+  @@index([dailyReportId])
+  @@index([employeeId])
+  @@index([attendanceId])
 }
