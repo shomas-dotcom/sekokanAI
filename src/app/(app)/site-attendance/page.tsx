@@ -7,6 +7,7 @@ import {
   closeMonthSiteAttendanceAction,
   updateSiteAttendancePricingAction,
 } from "./actions";
+import { getSupervisedProjectIds } from "@/lib/timesheet/permissions";
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: "下書き",
@@ -32,6 +33,10 @@ export default async function SiteAttendancePage({
   const { month: monthParam, groupBy = "project" } = await searchParams;
   const user = await requireUser();
   const isAdmin = user.role === "ADMIN";
+  const isSiteManager = user.role === "SITE_MANAGER";
+  const supervisedProjectIds = isSiteManager ? await getSupervisedProjectIds(user.id) : [];
+  // 現場責任者は担当現場の一次承認ができる(締め・単価設定は管理者専用のまま)。
+  const canApprove = isAdmin || isSiteManager;
 
   const now = new Date();
   const [y, m] = (monthParam ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`)
@@ -46,7 +51,15 @@ export default async function SiteAttendancePage({
   // (REQUIREMENTS.md/CLAUDE.mdの「従業員には単価と金額を見せない」方針も併せて適用する)。
   const scopeWhere = isAdmin
     ? { companyId: user.companyId }
-    : { companyId: user.companyId, employeeId: user.employeeId ?? "__none__" };
+    : isSiteManager
+      ? {
+          companyId: user.companyId,
+          OR: [
+            { projectId: { in: supervisedProjectIds.length > 0 ? supervisedProjectIds : ["__none__"] } },
+            { employeeId: user.employeeId ?? "__none__" },
+          ],
+        }
+      : { companyId: user.companyId, employeeId: user.employeeId ?? "__none__" };
 
   const records = await prisma.siteAttendance.findMany({
     where: { ...scopeWhere, targetDate: { gte: monthStart, lt: monthEnd } },
@@ -210,7 +223,7 @@ export default async function SiteAttendancePage({
                 <th className="py-1 pr-2">人工数</th>
                 {isAdmin && <th className="py-1 pr-2">単価</th>}
                 <th className="py-1 pr-2">状態</th>
-                {isAdmin && <th className="py-1"></th>}
+                {canApprove && <th className="py-1"></th>}
               </tr>
             </thead>
             <tbody>
@@ -243,7 +256,7 @@ export default async function SiteAttendancePage({
                     </td>
                   )}
                   <td className="py-1 pr-2">{STATUS_LABEL[r.status]}</td>
-                  {isAdmin && (
+                  {canApprove && (
                     <td className="py-1 whitespace-nowrap">
                       {r.status === "SUBMITTED" && (
                         <form action={approveSiteAttendanceAction} className="inline">
@@ -258,7 +271,7 @@ export default async function SiteAttendancePage({
                           差し戻し
                         </Link>
                       )}
-                      {r.status === "CLOSED" && (
+                      {isAdmin && r.status === "CLOSED" && (
                         <Link href={`/site-attendance/${r.id}/reopen`} className="text-xs text-slate-600 underline">
                           締め解除
                         </Link>
@@ -269,7 +282,7 @@ export default async function SiteAttendancePage({
               ))}
               {records.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 9 : 7} className="py-3 text-center text-slate-500">
+                  <td colSpan={isAdmin ? 9 : canApprove ? 7 : 6} className="py-3 text-center text-slate-500">
                     該当する出面がありません。
                   </td>
                 </tr>

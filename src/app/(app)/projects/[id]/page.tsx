@@ -3,7 +3,12 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ProjectForm } from "../ProjectForm";
-import { updateProjectAction, deleteProjectAction, updateProjectMembersAction } from "../actions";
+import {
+  updateProjectAction,
+  deleteProjectAction,
+  updateProjectMembersAction,
+  updateProjectSupervisorsAction,
+} from "../actions";
 import { Card, Button } from "@/components/ui";
 import { FileDropZone } from "./files/FileDropZone";
 import { deleteProjectFileAction } from "./files/actions";
@@ -21,24 +26,42 @@ export default async function EditProjectPage({
   const { id } = await params;
   const user = await requireUser();
 
-  const [project, customers, quotes, contracts, invoices, employees, members, kyActivities, projectFiles] =
-    await Promise.all([
-      prisma.project.findFirst({ where: { id, companyId: user.companyId } }),
-      prisma.customer.findMany({
-        where: { companyId: user.companyId },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true },
-      }),
-      prisma.quote.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
-      prisma.contract.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
-      prisma.invoice.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
-      prisma.employee.findMany({ where: { companyId: user.companyId }, orderBy: { name: "asc" } }),
-      prisma.projectMember.findMany({ where: { projectId: id }, select: { employeeId: true } }),
-      prisma.kyActivity.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { activityDate: "desc" } }),
-      prisma.projectFile.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
-    ]);
+  const [
+    project,
+    customers,
+    quotes,
+    contracts,
+    invoices,
+    employees,
+    members,
+    kyActivities,
+    projectFiles,
+    companyUsers,
+    supervisors,
+  ] = await Promise.all([
+    prisma.project.findFirst({ where: { id, companyId: user.companyId } }),
+    prisma.customer.findMany({
+      where: { companyId: user.companyId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    prisma.quote.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
+    prisma.contract.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
+    prisma.invoice.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
+    prisma.employee.findMany({ where: { companyId: user.companyId }, orderBy: { name: "asc" } }),
+    prisma.projectMember.findMany({ where: { projectId: id }, select: { employeeId: true } }),
+    prisma.kyActivity.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { activityDate: "desc" } }),
+    prisma.projectFile.findMany({ where: { projectId: id, companyId: user.companyId }, orderBy: { createdAt: "desc" } }),
+    prisma.user.findMany({
+      where: { companyId: user.companyId, deletedAt: null },
+      select: { id: true, name: true, role: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.projectSupervisor.findMany({ where: { projectId: id }, select: { userId: true } }),
+  ]);
   if (!project) notFound();
   const assignedEmployeeIds = new Set(members.map((m) => m.employeeId));
+  const assignedSupervisorUserIds = new Set(supervisors.map((s) => s.userId));
 
   return (
     <div className="flex flex-col gap-4">
@@ -175,6 +198,42 @@ export default async function EditProjectPage({
           </form>
         )}
       </Card>
+
+      {user.role === "ADMIN" && (
+        <Card className="max-w-lg">
+          <h2 className="font-semibold text-slate-900">現場責任者</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            ここで選んだ利用者は、この現場の日報・出面を確認し、一次承認できます。
+          </p>
+          {companyUsers.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">利用者がいません。</p>
+          ) : (
+            <form action={updateProjectSupervisorsAction} className="mt-2 flex flex-col gap-2">
+              <input type="hidden" name="projectId" value={project.id} />
+              <div className="flex flex-col gap-1.5">
+                {companyUsers.map((u) => (
+                  <label key={u.id} className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      name="userId"
+                      value={u.id}
+                      defaultChecked={assignedSupervisorUserIds.has(u.id)}
+                      className="accent-amber-600"
+                    />
+                    {u.name}
+                    <span className="text-slate-400">
+                      ({u.role === "ADMIN" ? "管理者" : u.role === "SITE_MANAGER" ? "現場責任者" : "使用者"})
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <Button type="submit" variant="secondary" className="w-fit">
+                保存する
+              </Button>
+            </form>
+          )}
+        </Card>
+      )}
 
       <form action={deleteProjectAction} className="max-w-lg">
         <input type="hidden" name="id" value={project.id} />

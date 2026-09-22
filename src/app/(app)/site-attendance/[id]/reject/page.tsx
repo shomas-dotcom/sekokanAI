@@ -1,8 +1,9 @@
-import { notFound } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
+import { notFound, redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, Textarea, Button } from "@/components/ui";
 import { rejectSiteAttendanceAction } from "../../actions";
+import { canManageProjectTimesheet } from "@/lib/timesheet/permissions";
 
 export default async function RejectSiteAttendancePage({
   params,
@@ -13,13 +14,14 @@ export default async function RejectSiteAttendancePage({
 }) {
   const { id } = await params;
   const { error } = await searchParams;
-  const admin = await requireAdmin();
+  const user = await requireUser();
 
   const record = await prisma.siteAttendance.findFirst({
-    where: { id, companyId: admin.companyId },
+    where: { id, companyId: user.companyId },
     include: { project: { select: { name: true } } },
   });
   if (!record) notFound();
+  if (!(await canManageProjectTimesheet(user, record.projectId))) redirect("/site-attendance");
 
   return (
     <Card className="max-w-md">

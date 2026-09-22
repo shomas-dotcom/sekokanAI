@@ -46,6 +46,14 @@ export default async function DailyReportDetailPage({
   ]);
   if (!report) notFound();
 
+  // 現場責任者は担当現場の日報だけ閲覧できる(管理者・一般社員の既存の見え方は変えない)。
+  if (user.role === "SITE_MANAGER") {
+    const supervises = await prisma.projectSupervisor.findFirst({
+      where: { projectId: report.projectId, userId: user.id },
+    });
+    if (!supervises) notFound();
+  }
+
   const unclearItems: { field: string; note: string }[] = report.unclearItemsJson
     ? JSON.parse(report.unclearItemsJson)
     : [];

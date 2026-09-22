@@ -2,9 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { canManageProjectTimesheet } from "@/lib/timesheet/permissions";
 
 async function writeChangeLog(params: {
   companyId: string;
@@ -50,28 +51,30 @@ export async function updateSiteAttendancePricingAction(formData: FormData) {
   revalidatePath("/site-attendance");
 }
 
+/** 出面の承認。管理者は常に可、現場責任者はその現場を担当している場合のみ(一次承認)。 */
 export async function approveSiteAttendanceAction(formData: FormData) {
-  const admin = await requireAdmin();
+  const user = await requireUser();
   const id = String(formData.get("id") ?? "");
 
-  const record = await prisma.siteAttendance.findFirst({ where: { id, companyId: admin.companyId } });
+  const record = await prisma.siteAttendance.findFirst({ where: { id, companyId: user.companyId } });
   if (!record || record.status !== "SUBMITTED") return;
+  if (!(await canManageProjectTimesheet(user, record.projectId))) return;
 
   await prisma.siteAttendance.update({
     where: { id },
-    data: { status: "APPROVED", approvedByUserId: admin.id, approvedAt: new Date() },
+    data: { status: "APPROVED", approvedByUserId: user.id, approvedAt: new Date() },
   });
   await writeChangeLog({
-    companyId: admin.companyId,
-    changedByUserId: admin.id,
+    companyId: user.companyId,
+    changedByUserId: user.id,
     entityId: id,
     changeType: "APPROVE",
     before: record.status,
     after: "APPROVED",
   });
   await logAction({
-    companyId: admin.companyId,
-    userId: admin.id,
+    companyId: user.companyId,
+    userId: user.id,
     action: "laborEntry.approve",
     targetType: "SiteAttendance",
     targetId: id,
@@ -81,18 +84,19 @@ export async function approveSiteAttendanceAction(formData: FormData) {
 }
 
 export async function rejectSiteAttendanceAction(formData: FormData) {
-  const admin = await requireAdmin();
+  const user = await requireUser();
   const id = String(formData.get("id") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
   if (!reason) redirect(`/site-attendance/${id}/reject?error=reason_required`);
 
-  const record = await prisma.siteAttendance.findFirst({ where: { id, companyId: admin.companyId } });
+  const record = await prisma.siteAttendance.findFirst({ where: { id, companyId: user.companyId } });
   if (!record || record.status !== "SUBMITTED") redirect("/site-attendance");
+  if (!(await canManageProjectTimesheet(user, record.projectId))) redirect("/site-attendance");
 
   await prisma.siteAttendance.update({ where: { id }, data: { status: "REJECTED", rejectionReason: reason } });
   await writeChangeLog({
-    companyId: admin.companyId,
-    changedByUserId: admin.id,
+    companyId: user.companyId,
+    changedByUserId: user.id,
     entityId: id,
     changeType: "REJECT",
     before: record.status,
@@ -100,8 +104,8 @@ export async function rejectSiteAttendanceAction(formData: FormData) {
     reason,
   });
   await logAction({
-    companyId: admin.companyId,
-    userId: admin.id,
+    companyId: user.companyId,
+    userId: user.id,
     action: "laborEntry.update",
     targetType: "SiteAttendance",
     targetId: id,

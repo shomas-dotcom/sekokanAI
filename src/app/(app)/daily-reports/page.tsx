@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Button, Badge, Select } from "@/components/ui";
 import type { Prisma } from "@/generated/prisma/client";
+import { getSupervisedProjectIds } from "@/lib/timesheet/permissions";
 
 export default async function DailyReportsPage({
   searchParams,
@@ -13,7 +14,15 @@ export default async function DailyReportsPage({
   const { projectId, month, worker } = await searchParams;
 
   const where: Prisma.DailyReportWhereInput = { companyId: user.companyId };
-  if (projectId) where.projectId = projectId;
+  // 現場責任者は担当現場の日報だけを見られるようにする(管理者・一般社員の既存の見え方は変えない)。
+  // 絞り込み欄で他の現場IDを指定されても、担当外の現場は返さないようにする。
+  if (user.role === "SITE_MANAGER") {
+    const supervisedProjectIds = await getSupervisedProjectIds(user.id);
+    const allowedIds = supervisedProjectIds.length > 0 ? supervisedProjectIds : ["__none__"];
+    where.projectId = projectId && allowedIds.includes(projectId) ? projectId : { in: allowedIds };
+  } else if (projectId) {
+    where.projectId = projectId;
+  }
   if (month) {
     const [y, m] = month.split("-").map(Number);
     if (y && m) {

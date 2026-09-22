@@ -9,7 +9,7 @@ import { sendTeamInviteEmail } from "@/lib/verification";
 
 export type TeamFormState = { error?: string; success?: string } | undefined;
 
-const ROLES = ["ADMIN", "MEMBER"] as const;
+const ROLES = ["ADMIN", "MEMBER", "SITE_MANAGER"] as const;
 type Role = (typeof ROLES)[number];
 
 /**
@@ -81,7 +81,7 @@ export async function updateTeamMemberRoleAction(formData: FormData): Promise<vo
   const target = await prisma.user.findFirst({ where: { id, companyId: admin.companyId } });
   if (!target) redirect("/settings?teamError=not_found");
 
-  if (target.role === "ADMIN" && role === "MEMBER") {
+  if (target.role === "ADMIN" && role !== "ADMIN") {
     const adminCount = await prisma.user.count({
       where: { companyId: admin.companyId, role: "ADMIN", deletedAt: null },
     });

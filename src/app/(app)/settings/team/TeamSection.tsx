@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { inviteTeamMemberAction, updateTeamMemberRoleAction, removeTeamMemberAction } from "./actions";
 import { Input, Select, Button, FieldLabel } from "@/components/ui";
 
-const ROLE_LABEL: Record<string, string> = { ADMIN: "管理者", MEMBER: "使用者" };
+const ROLE_LABEL: Record<string, string> = { ADMIN: "管理者", MEMBER: "使用者", SITE_MANAGER: "現場責任者" };
 
 export type TeamMember = {
   id: string;
@@ -57,6 +57,7 @@ export function TeamSection({ members, currentUserId }: { members: TeamMember[];
                   >
                     <option value="ADMIN">管理者</option>
                     <option value="MEMBER">使用者</option>
+                    <option value="SITE_MANAGER">現場責任者</option>
                   </select>
                 </form>
                 <form action={removeTeamMemberAction}>
@@ -82,6 +83,7 @@ export function TeamSection({ members, currentUserId }: { members: TeamMember[];
           <Select name="role" defaultValue="MEMBER" className="w-28">
             <option value="MEMBER">使用者</option>
             <option value="ADMIN">管理者</option>
+            <option value="SITE_MANAGER">現場責任者</option>
           </Select>
         </FieldLabel>
         <Button type="submit" variant="secondary" disabled={pending}>

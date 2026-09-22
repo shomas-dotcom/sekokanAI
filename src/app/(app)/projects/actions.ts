@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/numbering";
@@ -206,6 +206,41 @@ export async function updateProjectMembersAction(formData: FormData) {
     companyId: user.companyId,
     userId: user.id,
     action: "project.updateMembers",
+    targetType: "Project",
+    targetId: projectId,
+  });
+
+  revalidatePath(`/projects/${projectId}`);
+}
+
+/**
+ * 現場責任者(User)の担当現場割当を更新する(管理者のみ)。ProjectMember(Employeeの
+ * 現場配属名簿)とは別物 — こちらはログインアカウントに対する閲覧・一次承認の権限範囲。
+ */
+export async function updateProjectSupervisorsAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const projectId = String(formData.get("projectId") ?? "");
+
+  const project = await prisma.project.findFirst({ where: { id: projectId, companyId: admin.companyId } });
+  if (!project) return;
+
+  const userIds = formData.getAll("userId").map(String);
+  const validUsers = await prisma.user.findMany({
+    where: { id: { in: userIds }, companyId: admin.companyId, deletedAt: null },
+    select: { id: true },
+  });
+
+  await prisma.$transaction([
+    prisma.projectSupervisor.deleteMany({ where: { projectId } }),
+    prisma.projectSupervisor.createMany({
+      data: validUsers.map((u) => ({ projectId, userId: u.id })),
+    }),
+  ]);
+
+  await logAction({
+    companyId: admin.companyId,
+    userId: admin.id,
+    action: "project.updateSupervisors",
     targetType: "Project",
     targetId: projectId,
   });
