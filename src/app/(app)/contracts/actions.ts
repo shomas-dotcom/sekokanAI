@@ -10,6 +10,9 @@ import { computeContractAmounts } from "@/lib/calc";
 import { buildDefaultClauses, mergeClausesWithPast, type ContractClause } from "@/lib/contractClauses";
 import { advanceProjectStatus } from "@/lib/projectStatus";
 import { computeQuoteTotals } from "../quotes/totals";
+import { validateAiDocumentFile } from "@/lib/fileValidation";
+import { prepareImageForVision } from "@/lib/imageConversion";
+import { extractContractRequestFromImage, extractContractRequestFromPdf, type ContractRequestExtraction } from "@/lib/ai";
 
 export type ContractFormState = { error?: string } | undefined;
 
@@ -138,6 +141,77 @@ export async function createContractAction(
       ? `/contracts/${contract.id}?referencedContract=${encodeURIComponent(pastContract.contractNumber)}`
       : `/contracts/${contract.id}`
   );
+}
+
+export type ContractScanState =
+  | { error: string; extraction?: undefined; matchedProjectId?: undefined }
+  | { error?: undefined; extraction: ContractRequestExtraction; matchedProjectId: string | null }
+  | undefined;
+
+/**
+ * 発注者からの注文書(画像/PDF)を読み取り、契約書作成フォームへの仮入力を作る。
+ * ここではDBへの保存は一切行わない(既存のcreateContractActionが担う)。
+ * 顧客名・工事名は自由記述で読み取られるため、既存の案件と部分一致で突き合わせ、
+ * 一致すればプルダウンの初期選択に使う(一致しなければ手動で選択してもらう)。
+ */
+export async function scanContractRequestAction(
+  _prevState: ContractScanState,
+  formData: FormData
+): Promise<ContractScanState> {
+  const user = await requireUser();
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "注文書の画像またはPDFを選択してください。" };
+  }
+
+  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
+  let mimeType = file.type;
+  if (mimeType !== "application/pdf") {
+    const prepared = await prepareImageForVision(buffer, mimeType);
+    buffer = prepared.buffer;
+    mimeType = prepared.mimeType;
+  }
+
+  const validationError = validateAiDocumentFile({ type: mimeType, size: buffer.length });
+  if (validationError) return { error: validationError };
+
+  const base64 = buffer.toString("base64");
+  const usageContext = { companyId: user.companyId, userId: user.id, feature: "contract.scanRequest" };
+  const extraction =
+    mimeType === "application/pdf"
+      ? await extractContractRequestFromPdf(base64, usageContext)
+      : await extractContractRequestFromImage(
+          base64,
+          mimeType as "image/jpeg" | "image/png" | "image/webp",
+          usageContext
+        );
+
+  if (extraction.confidence === "unavailable") {
+    return {
+      error:
+        "読み取れませんでした。AI連携が設定されていないか、通信に失敗した可能性があります。もう一度お試しいただくか、手入力してください。",
+    };
+  }
+
+  let matchedProjectId: string | null = null;
+  if (extraction.customerName) {
+    const matched = await prisma.project.findFirst({
+      where: { companyId: user.companyId, customer: { name: { contains: extraction.customerName, mode: "insensitive" } } },
+      select: { id: true },
+    });
+    matchedProjectId = matched?.id ?? null;
+  }
+  if (!matchedProjectId && extraction.projectName) {
+    const matched = await prisma.project.findFirst({
+      where: { companyId: user.companyId, name: { contains: extraction.projectName, mode: "insensitive" } },
+      select: { id: true },
+    });
+    matchedProjectId = matched?.id ?? null;
+  }
+
+  await logAction({ companyId: user.companyId, userId: user.id, action: "contract.scanRequest" });
+
+  return { extraction, matchedProjectId };
 }
 
 export async function updateContractMetaAction(formData: FormData) {

@@ -1748,3 +1748,136 @@ export async function extractRatePriceFromPdf(
     return UNAVAILABLE_RATE_PRICE;
   }
 }
+
+// --- 契約書: 注文書からの自動入力(2026-09追記) --------------------------------
+//
+// 発注者から届いた注文書(画像/PDF)から、契約書作成フォームに使う情報を読み取る。
+// 契約は必ず既存の案件(Project)に紐づくため、ここでは金額・工期・支払条件等の
+// 読み取りに専念し、案件そのものの特定(顧客名との突き合わせ)は呼び出し側で行う
+// (extractProjectRequestFromImage/Pdfと同じ設計)。
+
+export type ContractRequestExtraction = {
+  customerName: string | null; // 発注者名。既存案件との突き合わせは呼び出し側で行う
+  projectName: string | null; // 工事名
+  contractAmountExcludingTax: number | null;
+  taxRatePercent: number | null;
+  contractDate: string | null; // YYYY-MM-DD
+  startDate: string | null;
+  endDate: string | null;
+  paymentTerms: string | null;
+  unclearFields: string[];
+  confidence: "high" | "needs_review" | "unavailable";
+};
+
+const CONTRACT_REQUEST_FIELD_LABEL: Record<string, string> = {
+  customerName: "発注者名",
+  contractAmountExcludingTax: "契約金額",
+  startDate: "工期(着手)",
+  endDate: "工期(完成)",
+};
+
+const CONTRACT_REQUEST_SYSTEM = `あなたは建設会社の事務担当者を補助するアシスタントです。
+発注者から届いた注文書(画像またはPDF)から、契約書作成に使う情報を読み取ってください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"customerName": string|null, "projectName": string|null, "contractAmountExcludingTax": number|null, "taxRatePercent": number|null, "contractDate": string|null, "startDate": string|null, "endDate": string|null, "paymentTerms": string|null}
+- contractAmountExcludingTax: 税抜金額(数字のみ)。税込金額しか書かれていない場合、消費税率が読み取れればそこから逆算し、読み取れなければnullのままにする
+- 日付(contractDate/startDate/endDate)は西暦のYYYY-MM-DD形式。年が確定できない場合はnullにする
+- paymentTerms: 支払条件の原文(例:「工事完成引渡し後、翌月末払い」)
+最も重要な注意: 注文書に明記されていない項目は、絶対に推測で埋めずnullにしてください。`;
+
+function parseContractRequestJson(raw: string): Omit<ContractRequestExtraction, "confidence" | "unclearFields"> {
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+  const s = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return {
+    customerName: s(parsed.customerName),
+    projectName: s(parsed.projectName),
+    contractAmountExcludingTax: n(parsed.contractAmountExcludingTax),
+    taxRatePercent: n(parsed.taxRatePercent),
+    contractDate: s(parsed.contractDate),
+    startDate: s(parsed.startDate),
+    endDate: s(parsed.endDate),
+    paymentTerms: s(parsed.paymentTerms),
+  };
+}
+
+function finalizeContractRequestExtraction(
+  fields: Omit<ContractRequestExtraction, "confidence" | "unclearFields">
+): ContractRequestExtraction {
+  const unclearFields = Object.entries(CONTRACT_REQUEST_FIELD_LABEL)
+    .filter(([key]) => (fields as unknown as Record<string, unknown>)[key] == null)
+    .map(([, label]) => label);
+  const coreFieldsFilled = [fields.customerName, fields.contractAmountExcludingTax, fields.startDate].filter(
+    (v) => v != null
+  ).length;
+  const confidence: ContractRequestExtraction["confidence"] = coreFieldsFilled >= 2 ? "high" : "needs_review";
+  return { ...fields, unclearFields, confidence };
+}
+
+const UNAVAILABLE_CONTRACT_REQUEST: ContractRequestExtraction = {
+  customerName: null,
+  projectName: null,
+  contractAmountExcludingTax: null,
+  taxRatePercent: null,
+  contractDate: null,
+  startDate: null,
+  endDate: null,
+  paymentTerms: null,
+  unclearFields: Object.values(CONTRACT_REQUEST_FIELD_LABEL),
+  confidence: "unavailable",
+};
+
+export async function extractContractRequestFromImage(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  usageContext?: AiUsageContext
+): Promise<ContractRequestExtraction> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため注文書の読み取りは利用できません",
+    });
+    return UNAVAILABLE_CONTRACT_REQUEST;
+  }
+  try {
+    const raw = await callAnthropicVision(
+      CONTRACT_REQUEST_SYSTEM,
+      base64Image,
+      mediaType,
+      "この注文書の内容を読み取ってください。",
+      usageContext
+    );
+    return finalizeContractRequestExtraction(parseContractRequestJson(raw));
+  } catch (err) {
+    console.error("[ai] extractContractRequestFromImage: failed", err);
+    return UNAVAILABLE_CONTRACT_REQUEST;
+  }
+}
+
+export async function extractContractRequestFromPdf(
+  base64Pdf: string,
+  usageContext?: AiUsageContext
+): Promise<ContractRequestExtraction> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため注文書の読み取りは利用できません",
+    });
+    return UNAVAILABLE_CONTRACT_REQUEST;
+  }
+  try {
+    const raw = await callAnthropicDocument(
+      CONTRACT_REQUEST_SYSTEM,
+      base64Pdf,
+      "この注文書の内容を読み取ってください。",
+      usageContext
+    );
+    return finalizeContractRequestExtraction(parseContractRequestJson(raw));
+  } catch (err) {
+    console.error("[ai] extractContractRequestFromPdf: failed", err);
+    return UNAVAILABLE_CONTRACT_REQUEST;
+  }
+}
