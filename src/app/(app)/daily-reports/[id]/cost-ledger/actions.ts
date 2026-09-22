@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { validateAiDocumentFile } from "@/lib/fileValidation";
+import { prepareImageForVision } from "@/lib/imageConversion";
+import { extractExpenseSlipFromImage, extractExpenseSlipFromPdf, type ExpenseSlipExtraction } from "@/lib/ai";
 
 // 原価集計表(既存Excel日報の氏名・単価・残業・職種表、車両/機械・材料表、協力会社表)の
 // 明細行を管理する。単価は給与相当の機微情報のため、この区画は手動入力のみとし、
@@ -152,4 +155,53 @@ export async function deletePartnerItemAction(formData: FormData) {
 
   await prisma.dailyReportPartnerItem.delete({ where: { id } });
   revalidatePath(`/daily-reports/${dailyReportId}/cost-ledger`);
+}
+
+export type ExpenseSlipScanState = { error?: string; extraction?: ExpenseSlipExtraction } | undefined;
+
+/**
+ * 協力会社(外注先)の請求書・伝票(画像/PDF)をAIに読み取らせ、原価集計表の
+ * 「協力会社持込資機材」「その他経費」欄への仮入力候補を作る。ここではDBを
+ * 一切更新しない — 実際に追加するかどうかは、確認画面でaddPartnerItemAction
+ * (既存の手入力用アクション)を押した時点で人間が決める。
+ */
+export async function scanExpenseSlipAction(
+  _prevState: ExpenseSlipScanState,
+  formData: FormData
+): Promise<ExpenseSlipScanState> {
+  const user = await requireUser();
+  const dailyReportId = String(formData.get("dailyReportId") ?? "");
+  await assertOwnedReport(dailyReportId, user.companyId);
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "伝票の画像またはPDFを選択してください。" };
+  }
+
+  let buffer: Buffer = Buffer.from(await file.arrayBuffer());
+  let mimeType = file.type;
+  if (mimeType !== "application/pdf") {
+    const prepared = await prepareImageForVision(buffer, mimeType);
+    buffer = prepared.buffer;
+    mimeType = prepared.mimeType;
+  }
+
+  const validationError = validateAiDocumentFile({ type: mimeType, size: buffer.length });
+  if (validationError) return { error: validationError };
+
+  const base64 = buffer.toString("base64");
+  const usageContext = { companyId: user.companyId, userId: user.id, feature: "costLedger.scanExpenseSlip" };
+  const extraction =
+    mimeType === "application/pdf"
+      ? await extractExpenseSlipFromPdf(base64, usageContext)
+      : await extractExpenseSlipFromImage(base64, mimeType as "image/jpeg" | "image/png" | "image/webp", usageContext);
+
+  if (extraction.confidence === "unavailable") {
+    return {
+      error:
+        "読み取れませんでした。AI連携が設定されていないか、通信に失敗した可能性があります。もう一度お試しいただくか、手入力してください。",
+    };
+  }
+
+  return { extraction };
 }

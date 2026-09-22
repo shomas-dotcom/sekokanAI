@@ -10,6 +10,7 @@ import {
   addPartnerItemAction,
   deletePartnerItemAction,
 } from "./actions";
+import { ExpenseSlipScanner } from "./ExpenseSlipScanner";
 
 export default async function CostLedgerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -158,6 +159,9 @@ export default async function CostLedgerPage({ params }: { params: Promise<{ id:
 
       <Card>
         <h2 className="font-semibold text-slate-900">協力会社持込資機材 / その他経費</h2>
+        <div className="mt-3">
+          <ExpenseSlipScanner dailyReportId={report.id} />
+        </div>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <div>
             <p className="text-xs font-medium text-slate-500">協力会社持込資機材</p>

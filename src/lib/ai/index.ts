@@ -1881,3 +1881,112 @@ export async function extractContractRequestFromPdf(
     return UNAVAILABLE_CONTRACT_REQUEST;
   }
 }
+
+// --- 日報: 協力会社の伝票からの原価集計表入力(2026-09追記) ---------------------
+//
+// 協力会社(外注先)から受け取った請求書・納品伝票等(画像/PDF)から、原価集計表の
+// 「協力会社持込資機材」「その他経費」欄に入れる1件分の情報を読み取る。
+// 既存のaddPartnerItemAction(cost-ledger/actions.ts)がそのまま使える形(名称・
+// 数量・単価)で返すことで、新しい保存処理を作らずに済むようにする。
+
+export type ExpenseSlipExtraction = {
+  name: string | null;
+  quantity: string | null; // 原文の数量表記(単位を含めたまま。例: "3台", "1式")
+  unitPrice: number | null;
+  categoryHint: "PARTNER_EQUIPMENT" | "OTHER_EXPENSE" | null; // 資機材かその他経費かの推定(確定はしない)
+  confidence: "high" | "needs_review" | "unavailable";
+};
+
+const EXPENSE_SLIP_SYSTEM = `あなたは建設会社の事務担当者を補助するアシスタントです。
+協力会社(外注先)から受け取った請求書・納品伝票・領収書等(画像またはPDF)から、
+原価集計表に入れる1件分の情報を読み取ってください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"name": string|null, "quantity": string|null, "unitPrice": number|null, "categoryHint": "PARTNER_EQUIPMENT"|"OTHER_EXPENSE"|null}
+- name: 品目・内容(例: "生コン打設補助", "残土処分費")
+- quantity: 数量(単位を含めた原文表記。例: "3台", "1式"、分からなければnull)
+- unitPrice: 金額(税抜・数字のみ)
+- categoryHint: 車両・機械・資機材の持込みであれば"PARTNER_EQUIPMENT"、それ以外の経費であれば"OTHER_EXPENSE"。判断できなければnull
+- 伝票に複数の品目がある場合は、合計金額が最も大きい1件、または最初に記載されている1件を選ぶこと
+最も重要な注意: 読み取れない項目は、絶対に推測で埋めずnullにしてください。`;
+
+function parseExpenseSlipJson(raw: string): Omit<ExpenseSlipExtraction, "confidence"> {
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+  const s = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const category = parsed.categoryHint;
+  return {
+    name: s(parsed.name),
+    quantity: s(parsed.quantity),
+    unitPrice: n(parsed.unitPrice),
+    categoryHint: category === "PARTNER_EQUIPMENT" || category === "OTHER_EXPENSE" ? category : null,
+  };
+}
+
+const UNAVAILABLE_EXPENSE_SLIP: ExpenseSlipExtraction = {
+  name: null,
+  quantity: null,
+  unitPrice: null,
+  categoryHint: null,
+  confidence: "unavailable",
+};
+
+function finalizeExpenseSlipExtraction(fields: Omit<ExpenseSlipExtraction, "confidence">): ExpenseSlipExtraction {
+  const confidence: ExpenseSlipExtraction["confidence"] =
+    fields.name && fields.unitPrice != null ? "high" : "needs_review";
+  return { ...fields, confidence };
+}
+
+export async function extractExpenseSlipFromImage(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  usageContext?: AiUsageContext
+): Promise<ExpenseSlipExtraction> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため伝票の読み取りは利用できません",
+    });
+    return UNAVAILABLE_EXPENSE_SLIP;
+  }
+  try {
+    const raw = await callAnthropicVision(
+      EXPENSE_SLIP_SYSTEM,
+      base64Image,
+      mediaType,
+      "この伝票の内容を読み取ってください。",
+      usageContext
+    );
+    return finalizeExpenseSlipExtraction(parseExpenseSlipJson(raw));
+  } catch (err) {
+    console.error("[ai] extractExpenseSlipFromImage: failed", err);
+    return UNAVAILABLE_EXPENSE_SLIP;
+  }
+}
+
+export async function extractExpenseSlipFromPdf(
+  base64Pdf: string,
+  usageContext?: AiUsageContext
+): Promise<ExpenseSlipExtraction> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため伝票の読み取りは利用できません",
+    });
+    return UNAVAILABLE_EXPENSE_SLIP;
+  }
+  try {
+    const raw = await callAnthropicDocument(
+      EXPENSE_SLIP_SYSTEM,
+      base64Pdf,
+      "この伝票の内容を読み取ってください。",
+      usageContext
+    );
+    return finalizeExpenseSlipExtraction(parseExpenseSlipJson(raw));
+  } catch (err) {
+    console.error("[ai] extractExpenseSlipFromPdf: failed", err);
+    return UNAVAILABLE_EXPENSE_SLIP;
+  }
+}
