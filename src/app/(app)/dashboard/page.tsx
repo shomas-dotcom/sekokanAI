@@ -40,6 +40,8 @@ export default async function DashboardPage() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
   const [
     projectCount,
@@ -50,6 +52,10 @@ export default async function DashboardPage() {
     issuedInvoiceCount,
     monthlyInvoiceAgg,
     monthlyOvertimeAgg,
+    monthlyAttendanceOvertimeAgg,
+    todayAttendanceCount,
+    unapprovedAttendanceCount,
+    monthlyManDaysAgg,
     expiringQualifications,
   ] = await Promise.all([
     // 会社が登録したばかりかどうかの判定(「はじめに」カードの表示要否)に使う
@@ -73,6 +79,23 @@ export default async function DashboardPage() {
     prisma.dailyReport.aggregate({
       where: { companyId, reportDate: { gte: monthStart, lt: monthEnd } },
       _sum: { overtimeMinutes: true },
+    }),
+    prisma.attendance.aggregate({
+      where: {
+        companyId,
+        targetDate: { gte: monthStart, lt: monthEnd },
+        status: { in: ["APPROVED", "CLOSED"] },
+      },
+      _sum: { overtimeMinutes: true },
+      _count: true,
+    }),
+    prisma.attendance.count({
+      where: { companyId, targetDate: { gte: todayStart, lt: todayEnd } },
+    }),
+    prisma.attendance.count({ where: { companyId, status: "SUBMITTED" } }),
+    prisma.siteAttendance.aggregate({
+      where: { companyId, targetDate: { gte: monthStart, lt: monthEnd } },
+      _sum: { manDays: true },
     }),
     prisma.employeeQualification.findMany({
       where: { expiresAt: { not: null }, employee: { companyId } },
@@ -100,7 +123,24 @@ export default async function DashboardPage() {
   );
   const unbilledContractCount = confirmedContractCount - contractsWithIssuedInvoice;
   const monthlyBilledAmount = monthlyInvoiceAgg._sum.total ?? 0;
-  const monthlyOvertimeHours = Math.round(((monthlyOvertimeAgg._sum.overtimeMinutes ?? 0) / 60) * 10) / 10;
+
+  // 勤怠機能の移行期間: 承認済み(または締め済み)の勤怠が1件でもあればそちらを正とし、
+  // まだ無ければ従来どおり日報の残業時間集計を使う(同じ時間を二重に数えないよう、
+  // どちらか一方だけを採用する)。
+  const useAttendanceForOvertime = monthlyAttendanceOvertimeAgg._count > 0;
+  const monthlyOvertimeHours = useAttendanceForOvertime
+    ? Math.round(((monthlyAttendanceOvertimeAgg._sum.overtimeMinutes ?? 0) / 60) * 10) / 10
+    : Math.round(((monthlyOvertimeAgg._sum.overtimeMinutes ?? 0) / 60) * 10) / 10;
+  const monthlyManDays = monthlyManDaysAgg._sum.manDays ?? 0;
+
+  const monthlyBillableAgg =
+    user.role === "ADMIN"
+      ? await prisma.siteAttendance.aggregate({
+          where: { companyId, targetDate: { gte: monthStart, lt: monthEnd }, isBillable: true },
+          _sum: { amount: true },
+        })
+      : null;
+  const monthlyBillableAmount = monthlyBillableAgg?._sum.amount ?? 0;
 
   // 「見て困らない数字」は絞る。ここに残すのは「今なにか対応が必要か」が
   // 一目でわかる4つだけにする(それ以外は各一覧画面で見られる)。
@@ -256,9 +296,44 @@ export default async function DashboardPage() {
             </p>
           </Card>
           <Card className="bg-gradient-to-br from-lime-50 to-emerald-50">
-            <p className="text-sm text-slate-500">今月の残業時間合計(日報集計)</p>
+            <p className="text-sm text-slate-500">
+              今月の残業時間合計({useAttendanceForOvertime ? "勤怠集計" : "日報集計"})
+            </p>
             <p className="mt-1 text-3xl font-bold text-slate-900">{monthlyOvertimeHours}時間</p>
           </Card>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Link
+            href="/attendance-management"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <p className="text-2xl font-bold text-slate-900">{todayAttendanceCount}</p>
+            <p className="mt-1 text-sm text-slate-500">今日の出勤人数</p>
+          </Link>
+          <Link
+            href="/attendance-management"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <p className="text-2xl font-bold text-slate-900">{unapprovedAttendanceCount}</p>
+            <p className="mt-1 text-sm text-slate-500">未承認の勤怠</p>
+          </Link>
+          <Link
+            href="/site-attendance"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+          >
+            <p className="text-2xl font-bold text-slate-900">{monthlyManDays}</p>
+            <p className="mt-1 text-sm text-slate-500">今月の総人工</p>
+          </Link>
+          {user.role === "ADMIN" && (
+            <Link
+              href="/site-attendance"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <p className="text-2xl font-bold text-slate-900">{monthlyBillableAmount.toLocaleString("ja-JP")}円</p>
+              <p className="mt-1 text-sm text-slate-500">今月の常用請求予定額</p>
+            </Link>
+          )}
         </div>
       </div>
 
