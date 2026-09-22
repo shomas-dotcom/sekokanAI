@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import type { ProjectFormState } from "./actions";
 import { STATUS_LABEL } from "./statusLabel";
-import type { ProjectStatus } from "@/generated/prisma/enums";
+import type { ProjectStatus, DailyReportFormat } from "@/generated/prisma/enums";
 import { Input, Select, Textarea, Button, FieldLabel } from "@/components/ui";
 import { Tabs } from "@/components/Tabs";
 
@@ -15,6 +15,8 @@ type Project = {
   siteAddress: string | null;
   orderingParty: string | null;
   primeContractorName?: string | null;
+  reportFormat?: DailyReportFormat;
+  siteAbbreviation?: string | null;
   status: ProjectStatus;
   startDate?: Date | string | null;
   endDate?: Date | string | null;
@@ -94,6 +96,18 @@ export function ProjectForm({
         </FieldLabel>
         <FieldLabel label="元請(自社が下請の場合)">
           <Input name="primeContractorName" defaultValue={project?.primeContractorName ?? ""} />
+        </FieldLabel>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <FieldLabel label="日報の様式">
+          <Select name="reportFormat" defaultValue={project?.reportFormat ?? "STANDARD"}>
+            <option value="STANDARD">自社の原価集計表(通常)</option>
+            <option value="NIPPON_DORO_KOCHO">日本道路株式会社「工事日報」指定様式</option>
+          </Select>
+        </FieldLabel>
+        <FieldLabel label="略称(指定様式の現場略称、任意)">
+          <Input name="siteAbbreviation" defaultValue={project?.siteAbbreviation ?? ""} />
         </FieldLabel>
       </div>
 

@@ -407,6 +407,13 @@ enum ProjectStatus {
   LOST // 失注
 }
 
+// 日報を元請提出用に指定様式へ出力する機能(2026-09追記)。新しい元請様式を追加する
+// 際は、ここへ値を追加し、対応するxlsx生成処理(src/lib/xlsx/)を追加すること。
+enum DailyReportFormat {
+  STANDARD // 自社の原価集計表(既存のExcel様式)
+  NIPPON_DORO_KOCHO // 日本道路株式会社「工事日報」(共帳022-01)
+}
+
 model Project {
   id                         String             @id @default(cuid())
   companyId                  String
@@ -418,6 +425,9 @@ model Project {
   siteAddress                String?
   orderingParty              String? // 発注者(自治体等)
   primeContractorName        String? // 元請(自社が下請の場合の元請会社名)
+  // 日報を元請提出用の指定様式で作る場合に使う(2026-09追記)。既定は自社の原価集計表様式のまま。
+  reportFormat               DailyReportFormat  @default(STANDARD)
+  siteAbbreviation           String? // 指定様式の「略称」欄(元請が現場を呼ぶ略称。任意)
   status                     ProjectStatus      @default(LEAD)
   startDate                  DateTime?
   endDate                    DateTime?
@@ -630,6 +640,9 @@ model DailyReport {
   // 日報ごとの作業員明細(誰が何時間・何人工入ったか)。既存の「作業員数」文字列項目は残しつつ、
   // ここに明細がある場合はここから人数を自動計算する(既存日報の互換性を壊さないため)。
   workers            DailyReportWorker[]
+  workTypeEntries    DailyReportWorkTypeEntry[]
+  materialEntries    DailyReportMaterialEntry[]
+  machineryEntries   DailyReportMachineryEntry[]
 
   @@index([companyId])
   @@index([projectId])
@@ -716,6 +729,65 @@ model DailyReportPartnerItem {
   name          String
   quantity      String?
   unitPrice     Int?
+
+  @@index([dailyReportId])
+}
+
+// --- 元請指定様式(日本道路株式会社「工事日報」共帳022-01)向けの明細(2026-09追記) ---
+//
+// Project.reportFormatがNIPPON_DORO_KOCHOの案件でのみ入力する想定の明細。既存の
+// workContent/laborEntries等とは別枠とし、既存の日報機能には一切影響しない。
+// 「累計」は元ファイルでは別ファイル参照だったが、既存のcostLedgerXlsx.tsと同じ考え方で
+// 同一案件の過去日報分をDBから合計して算出する(累計値そのものは保存しない)。
+
+// 工種・出来高・作業人員・外部提供者(協力会社)の明細。1日報に複数行(工種ごと)持てる。
+model DailyReportWorkTypeEntry {
+  id                       String      @id @default(cuid())
+  dailyReportId            String
+  dailyReport              DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  sortOrder                Int         @default(0)
+  workType                 String // 工種
+  subItem                  String? // 細目
+  workArea                 String? // 施工範囲
+  unit                     String?
+  dailyQuantity            Float? // 出来高(日計)
+  dailyWorkerCount         Int? // 作業人員(日計)
+  externalProviderName     String? // 外部提供者(協力会社名)
+  externalProviderQuantity Float? // 外部提供者への発注数量
+  externalProviderUnitPrice Int? // 外部提供者の単価(給与相当の機微情報。手入力のみ)
+
+  @@index([dailyReportId])
+}
+
+// 使用材料の明細。
+model DailyReportMaterialEntry {
+  id                String      @id @default(cuid())
+  dailyReportId     String
+  dailyReport       DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  sortOrder         Int         @default(0)
+  name              String // 品名
+  spec              String? // 規格
+  unit              String?
+  dailyQuantity     Float? // 搬入量(日計)
+  inspectionResult  String? // 受入検査("合" | "否" | 空欄)
+  supplierName      String? // 外部提供者(仕入先)
+  remarks           String?
+
+  @@index([dailyReportId])
+}
+
+// 使用機械の明細。元様式は機種ごとに列が固定(バックホウ複数種・ブル・ダンプ・測量機器等)
+// だが、会社ごとに保有機械は異なるため、行として自由に追加できる形にする
+// (Excel出力時に、指定様式の列位置へ入力順で割り当てる)。
+model DailyReportMachineryEntry {
+  id                String      @id @default(cuid())
+  dailyReportId     String
+  dailyReport       DailyReport @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  sortOrder         Int         @default(0)
+  machineType       String // 機種(例: "BH", "ブル", "TR", "TS")
+  spec              String? // 規格(例: "0.7", "D30")
+  operatorName      String? // 運転手
+  dailyCount        Float? // 使用台数・時間等(日計)
 
   @@index([dailyReportId])
 }

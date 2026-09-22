@@ -85,6 +85,14 @@ export default async function DailyReportDetailPage({
           >
             原価集計表
           </Link>
+          {report.project.reportFormat === "NIPPON_DORO_KOCHO" && (
+            <Link
+              href={`/daily-reports/${report.id}/nippondoro`}
+              className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+            >
+              日本道路指定様式
+            </Link>
+          )}
         </div>
       </div>
 

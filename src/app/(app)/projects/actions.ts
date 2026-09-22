@@ -14,7 +14,7 @@ import {
   extractProjectRequestFromPdf,
   type ProjectRequestExtraction,
 } from "@/lib/ai";
-import type { ProjectStatus } from "@/generated/prisma/enums";
+import type { ProjectStatus, DailyReportFormat } from "@/generated/prisma/enums";
 
 export type ProjectFormState = { error?: string } | undefined;
 
@@ -26,6 +26,8 @@ const STATUSES: ProjectStatus[] = [
   "COMPLETED",
   "LOST",
 ];
+
+const REPORT_FORMATS: DailyReportFormat[] = ["STANDARD", "NIPPON_DORO_KOCHO"];
 
 function parseDate(value: FormDataEntryValue | null): Date | null {
   const s = String(value ?? "").trim();
@@ -41,6 +43,7 @@ function parseIntOrNull(value: FormDataEntryValue | null): number | null {
 
 function readForm(formData: FormData) {
   const status = String(formData.get("status") ?? "LEAD") as ProjectStatus;
+  const reportFormat = String(formData.get("reportFormat") ?? "STANDARD") as DailyReportFormat;
   const startDate = parseDate(formData.get("startDate"));
   const endDate = parseDate(formData.get("endDate"));
   const taxRatePercent = Number(formData.get("taxRatePercent") ?? 10);
@@ -50,6 +53,8 @@ function readForm(formData: FormData) {
     siteAddress: String(formData.get("siteAddress") ?? "").trim() || null,
     orderingParty: String(formData.get("orderingParty") ?? "").trim() || null,
     primeContractorName: String(formData.get("primeContractorName") ?? "").trim() || null,
+    reportFormat: REPORT_FORMATS.includes(reportFormat) ? reportFormat : "STANDARD",
+    siteAbbreviation: String(formData.get("siteAbbreviation") ?? "").trim() || null,
     status: STATUSES.includes(status) ? status : "LEAD",
     startDate,
     endDate,
