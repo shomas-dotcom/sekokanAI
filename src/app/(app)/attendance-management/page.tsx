@@ -58,6 +58,12 @@ export default async function AttendanceManagementPage({
           <Link href={`/attendance-management?month=${nextMonth}`} className="rounded-full border border-slate-200 px-3 py-1.5 hover:bg-slate-50">
             翌月
           </Link>
+          <a
+            href={`/attendance-management/xlsx?month=${y}-${String(m).padStart(2, "0")}${employeeId ? `&employeeId=${employeeId}` : ""}`}
+            className="rounded-full bg-gradient-to-br from-amber-500 to-orange-600 px-3 py-1.5 font-medium text-white"
+          >
+            勤怠表をExcelでダウンロード
+          </a>
         </div>
       </div>
 

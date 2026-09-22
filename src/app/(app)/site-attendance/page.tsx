@@ -108,6 +108,14 @@ export default async function SiteAttendancePage({
           <Link href={`/site-attendance?month=${nextMonth}&groupBy=${groupBy}`} className="rounded-full border border-slate-200 px-3 py-1.5 hover:bg-slate-50">
             翌月
           </Link>
+          {isAdmin && (
+            <a
+              href={`/site-attendance/xlsx?month=${y}-${String(m).padStart(2, "0")}`}
+              className="rounded-full bg-gradient-to-br from-amber-500 to-orange-600 px-3 py-1.5 font-medium text-white"
+            >
+              出面集計表をExcelでダウンロード
+            </a>
+          )}
         </div>
       </div>
 
