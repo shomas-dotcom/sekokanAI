@@ -365,6 +365,9 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
   }
 
   if (worker.reflectToSiteAttendance) {
+    // 出面には勤怠のような「本人が見直して提出する」自己申告画面がなく、日報を保存した
+    // 時点で内容は確認済みとみなせるため、下書きを経由せず提出済みとして作成する
+    // (管理者がsite-attendance画面で承認・差し戻しを行う)。
     const created = await prisma.siteAttendance.create({
       data: {
         companyId: actor.companyId,
@@ -381,6 +384,8 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
         workMinutes: worker.workMinutes,
         manDays: worker.manDays ?? 1,
         isBillable: worker.isBillable,
+        status: "SUBMITTED",
+        submittedAt: new Date(),
         createdByUserId: actor.id,
       },
     });
