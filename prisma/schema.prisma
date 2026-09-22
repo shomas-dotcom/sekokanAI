@@ -498,6 +498,7 @@ enum FileEntityType {
   CONTRACT
   INVOICE
   EMPLOYEE
+  RATE_MASTER_ITEM
 }
 
 model EntityFile {

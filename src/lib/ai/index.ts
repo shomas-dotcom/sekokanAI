@@ -1642,3 +1642,109 @@ export async function analyzeAiIntakeFromPdf(
     return UNAVAILABLE_INTAKE;
   }
 }
+
+// --- 単価マスタ: 見積書等からの単価読み取り(2026-09追記) -------------------------
+//
+// 外注先・仕入先から受け取った見積書の画像/PDFから、指定した品目名に対応する単価を
+// 読み取る。REQUIREMENTS.mdの「AIが単価を勝手に確定しない」方針どおり、ここで返す値は
+// あくまで提案であり、実際に単価マスタへ反映するかどうかは人間が確認画面で判断する
+// (呼び出し側: rate-master/[id]/actions.ts)。
+
+export type RatePriceExtraction = {
+  unitPrice: number | null;
+  costPrice: number | null; // 仕入先からの見積であれば、この金額が自社の原価に相当することが多い
+  unit: string | null; // 見積書に書かれていた単位(単価マスタの単位と食い違う場合の確認用)
+  sourceDescription: string | null; // 見積書の発行元・日付など、読み取れた範囲の出所情報
+  confidence: "high" | "needs_review" | "unavailable";
+};
+
+const RATE_PRICE_SYSTEM = `あなたは建設会社の事務担当者を補助するアシスタントです。
+渡された見積書(画像またはPDF)から、指定された品目に対応する単価を読み取ってください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"unitPrice": number|null, "costPrice": number|null, "unit": string|null, "sourceDescription": string|null}
+- unitPrice: 指定された品目の単価(税抜・数字のみ)。見積書に複数の品目がある場合は、指定された品目名に最も近いものを選ぶこと
+- costPrice: 通常はunitPriceと同じ値でよい(仕入先からの見積金額がそのまま自社の原価になるため)。値引き後の金額が別途書かれていればそちらを使う
+- unit: 見積書に書かれている単位(例: "日", "m3", "式")。読み取れなければnull
+- sourceDescription: 発行元の会社名・見積日など、分かる範囲で簡潔に(例: "○○興業 2026年8月見積")
+最も重要な注意: 指定された品目が見積書に見当たらない場合や、金額が読み取れない場合は、絶対に推測で埋めずnullにしてください。`;
+
+function parseRatePriceJson(raw: string): Omit<RatePriceExtraction, "confidence"> {
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) throw new Error("AI response was not valid JSON");
+  const n = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const s = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  return {
+    unitPrice: n(parsed.unitPrice),
+    costPrice: n(parsed.costPrice),
+    unit: s(parsed.unit),
+    sourceDescription: s(parsed.sourceDescription),
+  };
+}
+
+const UNAVAILABLE_RATE_PRICE: RatePriceExtraction = {
+  unitPrice: null,
+  costPrice: null,
+  unit: null,
+  sourceDescription: null,
+  confidence: "unavailable",
+};
+
+function finalizeRatePriceExtraction(fields: Omit<RatePriceExtraction, "confidence">): RatePriceExtraction {
+  return { ...fields, confidence: fields.unitPrice != null ? "high" : "needs_review" };
+}
+
+export async function extractRatePriceFromImage(
+  base64Image: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  itemName: string,
+  usageContext?: AiUsageContext
+): Promise<RatePriceExtraction> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため見積書の読み取りは利用できません",
+    });
+    return UNAVAILABLE_RATE_PRICE;
+  }
+  try {
+    const raw = await callAnthropicVision(
+      RATE_PRICE_SYSTEM,
+      base64Image,
+      mediaType,
+      `この見積書から「${itemName}」の単価を読み取ってください。`,
+      usageContext
+    );
+    return finalizeRatePriceExtraction(parseRatePriceJson(raw));
+  } catch (err) {
+    console.error("[ai] extractRatePriceFromImage: failed", err);
+    return UNAVAILABLE_RATE_PRICE;
+  }
+}
+
+export async function extractRatePriceFromPdf(
+  base64Pdf: string,
+  itemName: string,
+  usageContext?: AiUsageContext
+): Promise<RatePriceExtraction> {
+  if (isMockMode()) {
+    await recordAiUsage(usageContext, {
+      model: "mock",
+      success: false,
+      errorMessage: "AI_API_KEY未設定のため見積書の読み取りは利用できません",
+    });
+    return UNAVAILABLE_RATE_PRICE;
+  }
+  try {
+    const raw = await callAnthropicDocument(
+      RATE_PRICE_SYSTEM,
+      base64Pdf,
+      `この見積書から「${itemName}」の単価を読み取ってください。`,
+      usageContext
+    );
+    return finalizeRatePriceExtraction(parseRatePriceJson(raw));
+  } catch (err) {
+    console.error("[ai] extractRatePriceFromPdf: failed", err);
+    return UNAVAILABLE_RATE_PRICE;
+  }
+}

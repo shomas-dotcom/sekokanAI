@@ -16,6 +16,7 @@ const ENTITY_BASE_PATH: Record<FileEntityType, string> = {
   CONTRACT: "/contracts",
   INVOICE: "/invoices",
   EMPLOYEE: "/employees",
+  RATE_MASTER_ITEM: "/rate-master",
 };
 
 function isFileEntityType(value: string): value is FileEntityType {
@@ -40,6 +41,8 @@ async function verifyEntityBelongsToCompany(
       return Boolean(await prisma.invoice.findFirst({ where: { id: entityId, companyId } }));
     case "EMPLOYEE":
       return Boolean(await prisma.employee.findFirst({ where: { id: entityId, companyId } }));
+    case "RATE_MASTER_ITEM":
+      return Boolean(await prisma.rateMasterItem.findFirst({ where: { id: entityId, companyId } }));
   }
 }
 

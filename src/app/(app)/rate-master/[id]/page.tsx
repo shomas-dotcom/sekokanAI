@@ -3,7 +3,9 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { RateMasterItemForm } from "../RateMasterItemForm";
 import { updateRateMasterItemAction, deleteRateMasterItemAction } from "../actions";
+import { RatePriceScanner } from "./RatePriceScanner";
 import { Card, Button } from "@/components/ui";
+import { EntityFileSection } from "@/components/entityFiles/EntityFileSection";
 import { isRateStale } from "@/lib/rateMaster";
 
 export default async function RateMasterItemDetailPage({
@@ -16,11 +18,17 @@ export default async function RateMasterItemDetailPage({
   const item = await prisma.rateMasterItem.findFirst({ where: { id, companyId: user.companyId } });
   if (!item) notFound();
 
-  const history = await prisma.rateMasterPriceHistory.findMany({
-    where: { rateMasterItemId: id, companyId: user.companyId },
-    orderBy: { effectiveDate: "desc" },
-    include: { sourceQuote: { select: { title: true, estimateNumber: true } } },
-  });
+  const [history, files] = await Promise.all([
+    prisma.rateMasterPriceHistory.findMany({
+      where: { rateMasterItemId: id, companyId: user.companyId },
+      orderBy: { effectiveDate: "desc" },
+      include: { sourceQuote: { select: { title: true, estimateNumber: true } } },
+    }),
+    prisma.entityFile.findMany({
+      where: { entityType: "RATE_MASTER_ITEM", entityId: id, companyId: user.companyId },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
   const lastPriceDate = history[0]?.effectiveDate ?? item.updatedAt;
   const stale = isRateStale(lastPriceDate);
 
@@ -36,6 +44,16 @@ export default async function RateMasterItemDetailPage({
 
       <Card className="max-w-lg">
         <RateMasterItemForm action={updateRateMasterItemAction} item={item} submitLabel="更新する" />
+      </Card>
+
+      <Card className="max-w-lg">
+        <h2 className="mb-3 font-semibold text-slate-900">見積書からAIで単価を読み取る</h2>
+        <RatePriceScanner itemId={item.id} currentUnit={item.unit} />
+      </Card>
+
+      <Card className="max-w-lg">
+        <h2 className="mb-3 font-semibold text-slate-900">ファイル参照</h2>
+        <EntityFileSection entityType="RATE_MASTER_ITEM" entityId={item.id} files={files} />
       </Card>
 
       <Card className="max-w-lg">
@@ -64,6 +82,7 @@ export default async function RateMasterItemDetailPage({
                   <p className="text-xs text-slate-400">
                     {h.effectiveDate.toLocaleDateString("ja-JP")}
                     {h.sourceQuote && ` ・参考元: ${h.sourceQuote.estimateNumber ?? h.sourceQuote.title}`}
+                    {h.note && ` ・${h.note}`}
                   </p>
                 </div>
               </li>

@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "FileEntityType" ADD VALUE 'RATE_MASTER_ITEM';
