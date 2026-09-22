@@ -259,10 +259,15 @@ export default async function SiteAttendancePage({
                   {canApprove && (
                     <td className="py-1 whitespace-nowrap">
                       {r.status === "SUBMITTED" && (
-                        <form action={approveSiteAttendanceAction} className="inline">
+                        <Link href={`/site-attendance/${r.id}/review`} className="mr-2 text-xs text-indigo-600 underline">
+                          確認して承認
+                        </Link>
+                      )}
+                      {r.status === "SUBMITTED" && (
+                        <form action={approveSiteAttendanceAction} className="mr-2 inline">
                           <input type="hidden" name="id" value={r.id} />
-                          <button type="submit" className="mr-2 text-xs text-emerald-600 underline">
-                            承認
+                          <button type="submit" className="text-xs text-emerald-600 underline">
+                            即承認
                           </button>
                         </form>
                       )}
