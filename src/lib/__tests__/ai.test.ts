@@ -138,8 +138,21 @@ describe("classifyVoiceIntent (モック実装、ダッシュボードの音声�
     );
   });
 
-  it("判断に迷う短い内容も日報側に倒す(現場で使う頻度が高いため)", async () => {
-    expect(await classifyVoiceIntent("お疲れ様です。")).toBe("DAILY_REPORT");
+  it("挨拶だけ・意味の取れない内容は日報にせずOTHER(空の日報を勝手に作らない)", async () => {
+    expect(await classifyVoiceIntent("お疲れ様です。")).toBe("OTHER");
+    expect(await classifyVoiceIntent("こんにちは")).toBe("OTHER");
+  });
+
+  it("調査報告の例文(山口現場・3人・8時〜17時)は日報と判定する", async () => {
+    expect(
+      await classifyVoiceIntent(
+        "今日は山口現場、杉本、田中、佐藤の3人。8時から17時。0.1バックホウ1台、3tダンプ2台、残土3台。明日はブロック積み。"
+      )
+    ).toBe("DAILY_REPORT");
+  });
+
+  it("数字がなくても作業の内容があれば日報と判定する", async () => {
+    expect(await classifyVoiceIntent("午前中は掘削、午後は埋戻しでした。")).toBe("DAILY_REPORT");
   });
 
   it("名刺・会社名の登録内容はCUSTOMERと判定する", async () => {

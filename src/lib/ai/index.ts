@@ -539,9 +539,9 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
 
 // ダッシュボードの「AIに話す」窓口が、話した内容を日報・KY(危険予知)・見積・
 // 請求・施工計画・安全書類・ヒヤリハット・顧客登録・従業員登録・案件依頼のどれに
-// 振り分けるかを判定する。どれとも言い切れない内容(挨拶のみ・意味不明瞭等)は
-// 日報側に倒す(現場で最も使う頻度が高く、間違えても内容はそのまま確認・修正できる
-// ため)。安全書類・ヒヤリハットは現時点では専用の登録画面が無いため、判定結果は
+// 振り分けるかを判定する。業務内容があって迷う場合は日報側に倒すが、挨拶のみ・
+// 意味不明瞭な内容はOTHERとし、日報を作らずに人へ確認する(2026-09 変更。
+// 以前は全て日報側に倒しており、「こんにちは」でも日報が作られていた)。安全書類・ヒヤリハットは現時点では専用の登録画面が無いため、判定結果は
 // 「この内容のようです」という案内までにとどめ、AIが自動で何かを確定させることはしない
 // (呼び出し側のsubmitVoiceEntryAction参照)。
 export type VoiceIntent =
@@ -599,8 +599,14 @@ function mockClassifyVoiceIntent(rawText: string): VoiceIntent {
   // 見積依頼・工事依頼の文面である可能性が高いと判断する(LINE等の実際の文面は
   // 「見積依頼」と明記しないことが多いため)。
   if (ADDRESS_PATTERN.test(rawText) && QUANTITY_UNIT_PATTERN.test(rawText)) return "PROJECT_REQUEST";
-  return "DAILY_REPORT";
+  // 日報らしい手がかり(時刻・人数・現場・作業・重機・天気など)がある場合だけ日報とする。
+  // 挨拶だけ・意味の取れない内容まで日報にすると、空に近い日報が勝手に作られるため(調査報告F11)。
+  if (DAILY_REPORT_SIGNAL_PATTERN.test(rawText)) return "DAILY_REPORT";
+  return "OTHER";
 }
+
+const DAILY_REPORT_SIGNAL_PATTERN =
+  /\d|[一二三四五六七八九十]+(人|名|台|時)|現場|作業|工事|人工|職長|バックホウ|ユンボ|ダンプ|重機|残土|掘削|埋戻|打設|舗装|搬入|搬出|撤去|設置|施工|晴|雨|曇|雪|天気|明日|今日/;
 
 async function aiClassifyVoiceIntent(
   rawText: string,
@@ -619,8 +625,9 @@ async function aiClassifyVoiceIntent(
 - INVOICE: 請求書の発行・入金に関する内容
 - CONSTRUCTION_PLAN: 施工計画・施工方針・施工手順に関する内容
 - SAFETY_DOCUMENT: 安全書類(グリーンファイル・安全教育記録等)の提出・作成に関する内容
-- OTHER: 上記のどれにも当てはまらない内容
-判断に迷う場合は必ず DAILY_REPORT としてください。`;
+- OTHER: 上記のどれにも当てはまらない内容。挨拶だけ・雑談・意味が読み取れない内容もOTHER
+業務の内容が含まれていて判断に迷う場合は DAILY_REPORT としてください。
+業務の内容が読み取れない場合は、日報にせず必ず OTHER としてください。`;
 
   const raw = (await callAnthropic(system, rawText, usageContext)).trim();
   const valid: VoiceIntent[] = [
@@ -636,7 +643,8 @@ async function aiClassifyVoiceIntent(
     "OTHER",
     "DAILY_REPORT",
   ];
-  return valid.find((v) => raw.includes(v)) ?? "DAILY_REPORT";
+  // AIの返答が想定外の形なら、日報を勝手に作らず「分からない」として人に確認してもらう。
+  return valid.find((v) => raw.includes(v)) ?? "OTHER";
 }
 
 export type KyItem = { risk: string; countermeasure: string };
