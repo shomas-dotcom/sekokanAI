@@ -32,9 +32,11 @@ export function PhotoGallery({ photos }: { photos: Photo[] }) {
             className="aspect-square w-full rounded-lg object-cover"
           />
           <Badge className="w-fit">{PHASE_LABELS[photo.phase] ?? photo.phase}</Badge>
-          {photo.takenAt && (
-            <p className="text-[11px] text-slate-400">{new Date(photo.takenAt).toLocaleString("ja-JP")}</p>
-          )}
+          <p className="text-[11px] text-slate-400">
+            {photo.takenAt
+              ? `撮影 ${new Date(photo.takenAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}`
+              : "撮影日時不明"}
+          </p>
           {photo.caption && <p className="text-xs text-slate-600">{photo.caption}</p>}
 
           <form action={updatePhotoPhaseAction} className="flex gap-1">

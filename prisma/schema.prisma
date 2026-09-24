@@ -668,7 +668,7 @@ model DailyReportPhoto {
   // 施工前/中/後。AI自動判定は課金が発生するため今回は対象外 —
   // 手動選択とし、アップロード順による初期値のみアプリ側で提案する。
   phase         PhotoPhase  @default(UNKNOWN)
-  takenAt       DateTime? // EXIFのDateTimeOriginal、取得できなければアップロード時刻
+  takenAt       DateTime? // EXIFのDateTimeOriginal。取得できなければnull(撮影日時不明)。登録日時はcreatedAt
   caption       String? // ユーザー入力のコメント(AI自動生成は今回スコープ外)
   sortOrder     Int         @default(0)
   createdAt     DateTime    @default(now())

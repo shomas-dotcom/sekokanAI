@@ -95,8 +95,10 @@ export async function uploadPhotoAction(
   );
 
   // EXIFのDateTimeOriginalはクライアント側(exifr)で抽出し、hidden inputで渡す。
-  // 取得できなければアップロード時刻をそのまま使う(断定はしない)。
-  const takenAt = takenAtStr ? new Date(takenAtStr) : new Date();
+  // 取得できなければ「撮影日時不明」(null)として保存する。アップロード時刻で埋めると、
+  // 撮影日と登録日の区別がつかなくなるため(調査報告F21)。登録日はcreatedAtに残る。
+  const parsedTakenAt = takenAtStr ? new Date(takenAtStr) : null;
+  const takenAt = parsedTakenAt && !Number.isNaN(parsedTakenAt.getTime()) ? parsedTakenAt : null;
 
   const photo = await prisma.dailyReportPhoto.create({
     data: {
