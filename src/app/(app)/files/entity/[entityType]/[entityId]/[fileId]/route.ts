@@ -3,7 +3,9 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { FileEntityType } from "@/generated/prisma/enums";
 
-const VALID_TYPES: FileEntityType[] = ["CUSTOMER", "QUOTE", "CONTRACT", "INVOICE", "EMPLOYEE"];
+// 添付できる種別(entityFileActions.ts の ENTITY_BASE_PATH)と揃える。揃っていないと、
+// 添付はできるのに開けない(単価マスタで400になっていた)。
+const VALID_TYPES: FileEntityType[] = ["CUSTOMER", "QUOTE", "CONTRACT", "INVOICE", "EMPLOYEE", "RATE_MASTER_ITEM"];
 
 export async function GET(
   _request: Request,
