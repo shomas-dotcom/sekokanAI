@@ -5,9 +5,23 @@
 
 const isMockMode = () => !process.env.RESEND_API_KEY;
 
+/** ログ用に宛先を伏せる(例: ta***@example.com)。本文やリンクと同様、個人情報を記録に残しすぎないため。 */
+export function maskEmail(address: string): string {
+  const [local, domain] = address.split("@");
+  if (!domain) return "***";
+  return `${local.slice(0, 2)}***@${domain}`;
+}
+
 export async function sendEmail(params: { to: string; subject: string; text: string }): Promise<void> {
   if (isMockMode()) {
-    // 開発中・APIキー未設定時は実際には送信せず、ログに出すだけにする。
+    // 本文にはパスワード設定リンク等の認証情報が入るため、本番では本文をログに出さない。
+    // 開発中だけは、メールサービスなしで動作確認できるよう本文も出す。
+    if (process.env.NODE_ENV === "production") {
+      console.warn(
+        `[email:not-configured] メール送信設定(RESEND_API_KEY)がないため送信していません。to=${maskEmail(params.to)} subject=${params.subject}`
+      );
+      throw new Error("メール送信の設定がされていないため、メールを送れませんでした。");
+    }
     console.log(`[email:mock] to=${params.to} subject=${params.subject}\n${params.text}`);
     return;
   }
@@ -28,8 +42,9 @@ export async function sendEmail(params: { to: string; subject: string; text: str
   });
 
   if (!response.ok) {
-    // メール送信失敗はログに残すが、呼び出し元の処理(会社登録等)自体は止めない
-    // (再送・手動確認で回復できるようにするため)。
-    console.error(`[email:error] status=${response.status} to=${params.to}`);
+    // 失敗を呼び出し元へ伝える。呼び出し元は try/catch で受け、会社登録等の本体処理は止めずに
+    // 「メールを送れなかった」ことを画面やログで分かるようにする(成功と誤表示しないため)。
+    console.error(`[email:error] status=${response.status} to=${maskEmail(params.to)}`);
+    throw new Error(`メール送信に失敗しました(status=${response.status})`);
   }
 }

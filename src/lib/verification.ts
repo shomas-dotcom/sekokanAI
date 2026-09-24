@@ -41,10 +41,13 @@ export async function consumeToken(
     return null;
   }
 
-  await prisma.verificationToken.update({
-    where: { id: record.id },
+  // 「未使用なら使用済みにする」を1回の更新で行う。同じリンクが同時に2回使われても、
+  // 更新できるのは片方だけになる(読取りと更新を分けると両方通ってしまうため)。
+  const { count } = await prisma.verificationToken.updateMany({
+    where: { id: record.id, usedAt: null },
     data: { usedAt: new Date() },
   });
+  if (count !== 1) return null;
 
   return record.userId;
 }
