@@ -4,6 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import { createInvoiceAction } from "../actions";
 import { BILLING_TYPE_LABEL } from "../statusLabel";
 import { Input, Select, Button, FieldLabel } from "@/components/ui";
+import { todayJstDateString } from "@/lib/timesheet/time";
 
 type ProjectOption = { id: string; label: string };
 type ContractOption = { id: string; projectId: string; label: string };
@@ -68,7 +69,7 @@ export function NewInvoiceForm({
 
       <div className="grid grid-cols-2 gap-4">
         <FieldLabel label="発行日">
-          <Input type="date" name="issueDate" defaultValue={new Date().toISOString().slice(0, 10)} />
+          <Input type="date" name="issueDate" defaultValue={todayJstDateString()} />
         </FieldLabel>
         <FieldLabel label="支払期限">
           <Input type="date" name="dueDate" />

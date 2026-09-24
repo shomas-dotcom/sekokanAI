@@ -5,6 +5,7 @@ import { createDailyReportAction } from "../actions";
 import { Select, Textarea, Button, FieldLabel } from "@/components/ui";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
 import { LocationWeatherButton } from "@/components/LocationWeatherButton";
+import { todayJstDateString } from "@/lib/timesheet/time";
 
 type ProjectOption = { id: string; name: string; customerName: string };
 
@@ -21,7 +22,7 @@ export function NewDailyReportForm({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [hasText, setHasText] = useState(false);
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayJstDateString();
 
   // 取引先名は工事名(案件)に紐づくCustomerマスタから取得する(重複入力を避けるため
   // DailyReportに独立フィールドは持たず、選択した案件の取引先を読み取り専用で表示する)

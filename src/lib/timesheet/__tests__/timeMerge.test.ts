@@ -4,6 +4,7 @@ import {
   computeWorkMinutes,
   computeNightShiftMinutes,
   mergeWorkIntervals,
+  todayJstDateString,
 } from "@/lib/timesheet/time";
 
 // 調査報告(2026-09-24)の T02〜T04・T19 に対応する試験。
@@ -35,6 +36,18 @@ describe("computeNightShiftMinutes の早朝", () => {
   });
   it("8時〜17時は0分", () => {
     expect(computeNightShiftMinutes(at("08:00"), at("17:00"), "22:00", "05:00")).toBe(0);
+  });
+});
+
+describe("todayJstDateString(F18: 朝の日報が前日になる)", () => {
+  it("日本時間10/1の朝7時(UTCでは9/30の22時)は 2026-10-01", () => {
+    expect(todayJstDateString(new Date("2026-09-30T22:00:00Z"))).toBe("2026-10-01");
+  });
+  it("日本時間10/1の23時59分は 2026-10-01", () => {
+    expect(todayJstDateString(new Date("2026-10-01T14:59:00Z"))).toBe("2026-10-01");
+  });
+  it("日本時間10/2の0時は 2026-10-02", () => {
+    expect(todayJstDateString(new Date("2026-10-01T15:00:00Z"))).toBe("2026-10-02");
   });
 });
 

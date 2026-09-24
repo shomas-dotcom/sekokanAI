@@ -4,6 +4,7 @@ import { useActionState, useRef } from "react";
 import { createKyActivityAction } from "../actions";
 import { Select, Textarea, Button, FieldLabel } from "@/components/ui";
 import { VoiceInputButton } from "@/components/VoiceInputButton";
+import { todayJstDateString } from "@/lib/timesheet/time";
 
 export function NewKyForm({
   projects,
@@ -14,7 +15,7 @@ export function NewKyForm({
 }) {
   const [state, formAction, pending] = useActionState(createKyActivityAction, undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayJstDateString();
 
   return (
     <form action={formAction} className="flex flex-col gap-4">

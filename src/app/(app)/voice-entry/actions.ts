@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { classifyVoiceIntent } from "@/lib/ai";
+import { todayJstDateString } from "@/lib/timesheet/time";
 import { createDailyReportAction } from "../daily-reports/actions";
 import { createKyActivityAction } from "../ky/actions";
 
@@ -42,7 +43,7 @@ export async function submitVoiceEntryAction(
     feature: "voiceEntry.classifyIntent",
   });
   await logAction({ companyId: user.companyId, userId: user.id, action: `voiceEntry.classify:${intent}` });
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayJstDateString();
 
   if (intent === "KY" || intent === "DAILY_REPORT") {
     if (!projectId) {

@@ -34,6 +34,15 @@ export function formatJstDateTime(date: Date | null | undefined): string {
   });
 }
 
+/**
+ * 日本時間での「今日」を"YYYY-MM-DD"で返す(日付入力欄の初期値用)。
+ * new Date().toISOString() はUTC基準のため、日本時間0〜8時台は前日になってしまう。
+ * 画面(スマホ)でもサーバー(UTC)でも同じ結果になるよう、UTC+9固定で計算する。
+ */
+export function todayJstDateString(now: Date = new Date()): string {
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 /** 日本時間基準で「その日の0時」を表すUTC上のDateを作る(targetDateの保存・比較に使う)。 */
 export function jstStartOfDay(year: number, month1to12: number, day: number): Date {
   return new Date(Date.UTC(year, month1to12 - 1, day - 0, -9, 0));

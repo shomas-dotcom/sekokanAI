@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { createContractAction, scanContractRequestAction } from "../actions";
 import { Input, Select, Button, FieldLabel } from "@/components/ui";
+import { todayJstDateString } from "@/lib/timesheet/time";
 
 type ProjectOption = {
   id: string;
@@ -152,7 +153,7 @@ export function NewContractForm({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <FieldLabel label="契約日">
-          <Input ref={contractDateRef} type="date" name="contractDate" defaultValue={new Date().toISOString().slice(0, 10)} />
+          <Input ref={contractDateRef} type="date" name="contractDate" defaultValue={todayJstDateString()} />
         </FieldLabel>
         <FieldLabel label="工期(着手)">
           <Input ref={startDateRef} type="date" name="startDate" />
