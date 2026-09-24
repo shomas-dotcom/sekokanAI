@@ -76,9 +76,11 @@ export function computeNightShiftMinutes(
   const overlap = (aStart: number, aEnd: number, bStart: number, bEnd: number) =>
     Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
 
+  // 当日早朝分(0〜nightEnd)も数える。これがないと4時〜8時勤務の深夜時間が0になる。
+  const earlyMorningNight = overlap(start, end, 0, nightEnd);
   const todayNight = overlap(start, end, nightStart, 1440);
   const tomorrowNight = overlap(start, end, 1440, 1440 + nightEnd);
-  return todayNight + tomorrowNight;
+  return earlyMorningNight + todayNight + tomorrowNight;
 }
 
 /** 会社設定に基づき、実働時間を普通勤務・残業・休日勤務に振り分ける。 */
@@ -105,9 +107,60 @@ export function computeWorkMinutes(
   breakMinutes: number
 ): number | null {
   if (!startTime || !endTime) return null;
-  const [sh, sm] = startTime.split(":").map(Number);
-  const [eh, em] = endTime.split(":").map(Number);
-  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return null;
-  const minutes = eh * 60 + em - (sh * 60 + sm) - breakMinutes;
+  // 休憩は0以上の整数のみ。負の休憩で実働が増える・小数で端数が出ることを防ぐ。
+  if (!Number.isInteger(breakMinutes) || breakMinutes < 0) return null;
+  const start = parseWallTimeMinutes(startTime);
+  const end = parseWallTimeMinutes(endTime);
+  if (start == null || end == null) return null;
+  const minutes = end - start - breakMinutes;
   return minutes > 0 ? minutes : null;
+}
+
+/** "HH:mm"を0時からの分数にする。時は0〜29(深夜の翌日跨ぎ表記)、分は0〜59以外は不正としてnull。 */
+export function parseWallTimeMinutes(hhmm: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 29 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+export type WorkInterval = {
+  start: Date | null;
+  end: Date | null;
+  breakMinutes: number;
+  workMinutes: number | null;
+};
+
+/**
+ * 同じ人・同じ日の複数の作業区間(複数現場の日報)を、勤怠1日分にまとめる。
+ * 出勤は最も早い開始、退勤は最も遅い終了、休憩・実働は合計。
+ * 区間が重なっている場合は二重計上のおそれがあるため overlaps=true を返す(呼び出し側で自動確定しない)。
+ * 時刻がない区間がある場合も、合計が正しいか判断できないため incomplete=true を返す。
+ */
+export function mergeWorkIntervals(intervals: WorkInterval[]): {
+  clockIn: Date | null;
+  clockOut: Date | null;
+  breakMinutes: number;
+  workMinutes: number | null;
+  overlaps: boolean;
+  incomplete: boolean;
+} {
+  const timed = intervals.filter((i) => i.start && i.end) as (WorkInterval & { start: Date; end: Date })[];
+  const incomplete = timed.length !== intervals.length || intervals.some((i) => i.workMinutes == null);
+
+  const sorted = [...timed].sort((a, b) => a.start.getTime() - b.start.getTime());
+  let overlaps = false;
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].start.getTime() < sorted[i - 1].end.getTime()) overlaps = true;
+  }
+
+  const clockIn = sorted.length ? sorted[0].start : null;
+  const clockOut = sorted.length ? new Date(Math.max(...sorted.map((i) => i.end.getTime()))) : null;
+  const breakMinutes = intervals.reduce((sum, i) => sum + (i.breakMinutes ?? 0), 0);
+  const known = intervals.filter((i) => i.workMinutes != null);
+  const workMinutes = known.length ? known.reduce((sum, i) => sum + (i.workMinutes ?? 0), 0) : null;
+
+  return { clockIn, clockOut, breakMinutes, workMinutes, overlaps, incomplete };
 }

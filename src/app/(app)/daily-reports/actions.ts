@@ -6,7 +6,13 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { draftDailyReportFromText } from "@/lib/ai";
-import { jstWallTimeToUtc, computeWorkMinutes, computeAttendanceBreakdown, computeNightShiftMinutes } from "@/lib/timesheet/time";
+import {
+  jstWallTimeToUtc,
+  computeWorkMinutes,
+  computeAttendanceBreakdown,
+  computeNightShiftMinutes,
+  mergeWorkIntervals,
+} from "@/lib/timesheet/time";
 import { getOrCreateWorkSettings } from "@/lib/timesheet/settings";
 import type { DailyReportWorkerType } from "@/generated/prisma/enums";
 
@@ -153,6 +159,9 @@ export async function deleteDailyReportAction(formData: FormData) {
 
 const WORKER_TYPES: DailyReportWorkerType[] = ["EMPLOYEE", "PARTNER", "SUBCONTRACTOR", "MANUAL"];
 
+// 同じ日の日報どうしで作業時間が重なったとき、勤怠の備考に付ける印(合算せず確認を促す)。
+const OVERLAP_REMARK = "【要確認】同じ日の別の日報と作業時間が重なっています。時間を確認してください。";
+
 /**
  * 日報の作業員明細を追加する(自社従業員はマスタから選択、協力会社・外注・手入力は
  * 直接入力)。既存の「作業員数」「職長」は削除せず、明細からここで自動計算して同期する
@@ -195,6 +204,11 @@ export async function addDailyReportWorkerAction(formData: FormData) {
   const endTime = String(formData.get("endTime") ?? "").trim() || null;
   const breakMinutesStr = String(formData.get("breakMinutes") ?? "").trim();
   const breakMinutes = breakMinutesStr ? Number(breakMinutesStr) : 0;
+  // 負の休憩・小数・数字以外は受け付けない(実働が水増しされるのを防ぐ)。
+  if (!Number.isInteger(breakMinutes) || breakMinutes < 0) {
+    revalidatePath(`/daily-reports/${dailyReportId}`);
+    return;
+  }
   const manDaysStr = String(formData.get("manDays") ?? "").trim();
   const workDescription = String(formData.get("workDescription") ?? "").trim() || null;
   const isForeman = formData.get("isForeman") === "on";
@@ -334,22 +348,61 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
         targetId: created.id,
       });
     } else if (existing.status === "DRAFT" || existing.status === "REJECTED") {
-      await prisma.attendance.update({
-        where: { id: existing.id },
-        data: {
-          sourceDailyReportId: worker.dailyReportId,
-          clockInTime: clockIn ?? existing.clockInTime,
-          clockOutTime: clockOut ?? existing.clockOutTime,
-          normalWorkMinutes: breakdown.normalWorkMinutes ?? existing.normalWorkMinutes,
-          overtimeMinutes: breakdown.overtimeMinutes ?? existing.overtimeMinutes,
-          nightShiftMinutes: nightShiftMinutes ?? existing.nightShiftMinutes,
-          siteArrivalTime: clockIn ?? existing.siteArrivalTime,
-          siteDepartureTime: clockOut ?? existing.siteDepartureTime,
-          breakMinutes: worker.breakMinutes ?? existing.breakMinutes,
-          actualWorkMinutes: worker.workMinutes ?? existing.actualWorkMinutes,
-          updatedByUserId: actor.id,
-        },
+      // 同じ人が同じ日に別の現場の日報にも出ている場合、その分とまとめて1日分を計算し直す
+      // (以前は後から反映した現場の時間で上書きしており、3時間+4時間が4時間になっていた)。
+      const alreadyLinked = await prisma.dailyReportWorker.findMany({
+        where: { attendanceId: existing.id, reflectToAttendance: true, id: { not: worker.id } },
+        include: { dailyReport: { select: { reportDate: true } } },
       });
+      const sameDayWorkers = [...alreadyLinked, worker];
+      const intervals = sameDayWorkers.map((w) => ({
+        start: w.startTime ? jstWallTimeToUtc(w.dailyReport.reportDate, w.startTime) : null,
+        end: w.endTime ? jstWallTimeToUtc(w.dailyReport.reportDate, w.endTime) : null,
+        breakMinutes: w.breakMinutes ?? 0,
+        workMinutes: w.workMinutes,
+      }));
+      const merged = mergeWorkIntervals(intervals);
+
+      if (merged.overlaps) {
+        // 時間帯が重なる = 二重登録か入力誤りのおそれ。合算も上書きもせず、備考で確認を促す
+        // (勤怠は下書きのまま残り、本人・管理者が確認画面で直す)。
+        const remarks = existing.remarks?.includes(OVERLAP_REMARK)
+          ? existing.remarks
+          : [OVERLAP_REMARK, existing.remarks].filter(Boolean).join("\n");
+        await prisma.attendance.update({
+          where: { id: existing.id },
+          data: { remarks, updatedByUserId: actor.id },
+        });
+      } else {
+        const mergedBreakdown = computeAttendanceBreakdown({
+          actualWorkMinutes: merged.workMinutes,
+          workCategory: "NORMAL",
+          scheduledWorkMinutes: settings.scheduledWorkMinutes,
+        });
+        const nightPerInterval = intervals.map((i) =>
+          computeNightShiftMinutes(i.start, i.end, settings.nightShiftStartTime, settings.nightShiftEndTime)
+        );
+        const mergedNight = nightPerInterval.every((n) => n == null)
+          ? null
+          : nightPerInterval.reduce<number>((sum, n) => sum + (n ?? 0), 0);
+
+        await prisma.attendance.update({
+          where: { id: existing.id },
+          data: {
+            sourceDailyReportId: worker.dailyReportId,
+            clockInTime: merged.clockIn ?? existing.clockInTime,
+            clockOutTime: merged.clockOut ?? existing.clockOutTime,
+            normalWorkMinutes: mergedBreakdown.normalWorkMinutes ?? existing.normalWorkMinutes,
+            overtimeMinutes: mergedBreakdown.overtimeMinutes ?? existing.overtimeMinutes,
+            nightShiftMinutes: mergedNight ?? existing.nightShiftMinutes,
+            siteArrivalTime: merged.clockIn ?? existing.siteArrivalTime,
+            siteDepartureTime: merged.clockOut ?? existing.siteDepartureTime,
+            breakMinutes: merged.breakMinutes,
+            actualWorkMinutes: merged.workMinutes ?? existing.actualWorkMinutes,
+            updatedByUserId: actor.id,
+          },
+        });
+      }
       await prisma.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
       await logAction({
         companyId: actor.companyId,
