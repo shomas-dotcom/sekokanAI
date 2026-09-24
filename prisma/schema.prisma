@@ -1312,8 +1312,14 @@ model SiteAttendance {
   workMinutes         Int?
   manDayUnit          ManDayUnit       @default(FULL)
   manDays             Float // 実際の人工数(0.25刻み、または任意入力の値)
-  manDayUnitPrice     Int? // 人工単価(従業員には非表示、権限管理で制御)
-  amount              Int? // 人工金額 = manDays × manDayUnitPrice
+  // 請求単価(元請へ請求する人工単価)。2026-09以前は原価計算にも流用していたが、
+  // 粗利が出せないため原価単価(laborCostUnitPrice)を分けた。従業員には非表示。
+  manDayUnitPrice     Int?
+  amount              Int? // 請求金額 = manDays × manDayUnitPrice
+  // 労務原価の単価(自社が支払う日当等)。未入力(null)は「原価未入力」として集計から外し件数を示す。
+  // 既存の請求単価から自動で埋めない(意味が違うため。調査報告F10)。
+  laborCostUnitPrice  Int?
+  laborCostAmount     Int? // 労務原価 = manDays × laborCostUnitPrice
   isBillable          Boolean          @default(true) // 請求対象
   isCostTarget        Boolean          @default(true) // 原価対象
   remarks             String?

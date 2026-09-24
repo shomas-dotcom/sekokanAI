@@ -6,6 +6,7 @@ import { requireAdmin, requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { canManageProjectTimesheet } from "@/lib/timesheet/permissions";
+import { amountOf, parseUnitPrice } from "@/lib/timesheet/siteAttendanceTotals";
 
 async function writeChangeLog(params: {
   companyId: string;
@@ -30,22 +31,43 @@ async function writeChangeLog(params: {
   });
 }
 
-/** 出面の人工単価を設定する(管理者のみ)。単価は給与相当の機微情報のため管理者専用。 */
+/**
+ * 出面の請求単価・原価単価を設定する(管理者のみ)。単価は給与相当の機微情報のため管理者専用。
+ * 請求単価(元請へ請求)と原価単価(自社の労務費)は別の値として保存する(調査報告F10)。
+ */
 export async function updateSiteAttendancePricingAction(formData: FormData) {
   const admin = await requireAdmin();
   const id = String(formData.get("id") ?? "");
-  const unitPriceStr = String(formData.get("manDayUnitPrice") ?? "").trim();
+  const manDayUnitPrice = parseUnitPrice(String(formData.get("manDayUnitPrice") ?? ""));
+  // 原価単価の欄がないフォーム(旧画面・請求単価だけの変更)から送られた場合は、原価単価を消さずに残す。
+  const laborCostUnitPrice = formData.has("laborCostUnitPrice")
+    ? parseUnitPrice(String(formData.get("laborCostUnitPrice") ?? ""))
+    : null;
+  const keepLaborCost = !formData.has("laborCostUnitPrice");
+  // マイナス・小数・文字は保存しない(金額が狂うのを防ぐ)
+  if (manDayUnitPrice === undefined || laborCostUnitPrice === undefined) return;
 
   const record = await prisma.siteAttendance.findFirst({ where: { id, companyId: admin.companyId } });
   if (!record) return;
   if (record.status === "CLOSED") return;
 
-  const manDayUnitPrice = unitPriceStr ? Number(unitPriceStr) : null;
-  const amount = manDayUnitPrice != null ? Math.round(record.manDays * manDayUnitPrice) : null;
-
   await prisma.siteAttendance.update({
     where: { id },
-    data: { manDayUnitPrice, amount, updatedByUserId: admin.id },
+    data: {
+      manDayUnitPrice,
+      amount: amountOf(record.manDays, manDayUnitPrice),
+      ...(keepLaborCost
+        ? {}
+        : { laborCostUnitPrice, laborCostAmount: amountOf(record.manDays, laborCostUnitPrice) }),
+      updatedByUserId: admin.id,
+    },
+  });
+  await logAction({
+    companyId: admin.companyId,
+    userId: admin.id,
+    action: "siteAttendance.updatePricing",
+    targetType: "SiteAttendance",
+    targetId: id,
   });
 
   revalidatePath("/site-attendance");
