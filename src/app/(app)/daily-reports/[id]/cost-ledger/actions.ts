@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { validateAiDocumentFile } from "@/lib/fileValidation";
@@ -11,6 +11,8 @@ import { extractExpenseSlipFromImage, extractExpenseSlipFromPdf, type ExpenseSli
 // 原価集計表(既存Excel日報の氏名・単価・残業・職種表、車両/機械・材料表、協力会社表)の
 // 明細行を管理する。単価は給与相当の機微情報のため、この区画は手動入力のみとし、
 // 音声入力ボタンは配置しない(REQUIREMENTS.md「推測で埋めない」方針にも合致)。
+// 日当・単価を含むため、閲覧・保存・Excel出力はすべて管理者(ADMIN)のみとする
+// (出面の単価入力が管理者のみであることと合わせる。一般社員・現場責任者には見せない)。
 
 async function assertOwnedReport(dailyReportId: string, companyId: string) {
   const report = await prisma.dailyReport.findFirst({ where: { id: dailyReportId, companyId } });
@@ -19,7 +21,7 @@ async function assertOwnedReport(dailyReportId: string, companyId: string) {
 }
 
 export async function addLaborEntryAction(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireAdmin();
   const dailyReportId = String(formData.get("dailyReportId") ?? "");
   await assertOwnedReport(dailyReportId, user.companyId);
 
@@ -56,17 +58,18 @@ export async function addLaborEntryAction(formData: FormData) {
 }
 
 export async function deleteLaborEntryAction(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireAdmin();
   const id = String(formData.get("id") ?? "");
   const dailyReportId = String(formData.get("dailyReportId") ?? "");
   await assertOwnedReport(dailyReportId, user.companyId);
 
-  await prisma.dailyReportLaborEntry.delete({ where: { id } });
+  // 行がその日報のものかも条件に入れる(他社の行IDを渡されても消せないように)。
+  await prisma.dailyReportLaborEntry.deleteMany({ where: { id, dailyReportId } });
   revalidatePath(`/daily-reports/${dailyReportId}/cost-ledger`);
 }
 
 export async function addOwnItemAction(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireAdmin();
   const dailyReportId = String(formData.get("dailyReportId") ?? "");
   await assertOwnedReport(dailyReportId, user.companyId);
 
@@ -102,17 +105,17 @@ export async function addOwnItemAction(formData: FormData) {
 }
 
 export async function deleteOwnItemAction(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireAdmin();
   const id = String(formData.get("id") ?? "");
   const dailyReportId = String(formData.get("dailyReportId") ?? "");
   await assertOwnedReport(dailyReportId, user.companyId);
 
-  await prisma.dailyReportOwnItem.delete({ where: { id } });
+  await prisma.dailyReportOwnItem.deleteMany({ where: { id, dailyReportId } });
   revalidatePath(`/daily-reports/${dailyReportId}/cost-ledger`);
 }
 
 export async function addPartnerItemAction(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireAdmin();
   const dailyReportId = String(formData.get("dailyReportId") ?? "");
   await assertOwnedReport(dailyReportId, user.companyId);
 
@@ -148,12 +151,12 @@ export async function addPartnerItemAction(formData: FormData) {
 }
 
 export async function deletePartnerItemAction(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireAdmin();
   const id = String(formData.get("id") ?? "");
   const dailyReportId = String(formData.get("dailyReportId") ?? "");
   await assertOwnedReport(dailyReportId, user.companyId);
 
-  await prisma.dailyReportPartnerItem.delete({ where: { id } });
+  await prisma.dailyReportPartnerItem.deleteMany({ where: { id, dailyReportId } });
   revalidatePath(`/daily-reports/${dailyReportId}/cost-ledger`);
 }
 
@@ -169,7 +172,7 @@ export async function scanExpenseSlipAction(
   _prevState: ExpenseSlipScanState,
   formData: FormData
 ): Promise<ExpenseSlipScanState> {
-  const user = await requireUser();
+  const user = await requireAdmin();
   const dailyReportId = String(formData.get("dailyReportId") ?? "");
   await assertOwnedReport(dailyReportId, user.companyId);
 

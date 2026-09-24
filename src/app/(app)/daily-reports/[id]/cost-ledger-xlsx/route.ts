@@ -14,6 +14,10 @@ function toReiwaText(date: Date): string {
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requireUser();
+  // 日当・単価を含むため管理者のみ(原価集計表の画面・保存処理と同じ条件)。
+  if (user.role !== "ADMIN") {
+    return NextResponse.json({ error: "原価集計表は管理者のみ出力できます。" }, { status: 403 });
+  }
 
   const report = await prisma.dailyReport.findFirst({
     where: { id, companyId: user.companyId },

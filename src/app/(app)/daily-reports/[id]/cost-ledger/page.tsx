@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, Input, Button } from "@/components/ui";
 import {
@@ -14,7 +14,8 @@ import { ExpenseSlipScanner } from "./ExpenseSlipScanner";
 
 export default async function CostLedgerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const user = await requireUser();
+  // 日当・単価を含むため管理者のみ(actions.ts と同じ条件)。
+  const user = await requireAdmin();
 
   const report = await prisma.dailyReport.findFirst({
     where: { id, companyId: user.companyId },
