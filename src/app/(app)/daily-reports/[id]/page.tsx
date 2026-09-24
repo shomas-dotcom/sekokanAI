@@ -9,6 +9,7 @@ import {
   deleteDailyReportWorkerAction,
 } from "../actions";
 import { Card, Input, Textarea, Select, Button, FieldLabel } from "@/components/ui";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { PhotoUploadForm } from "./photos/PhotoUploadForm";
 import { PhotoGallery } from "./photos/PhotoGallery";
 
@@ -281,7 +282,7 @@ export default async function DailyReportDetailPage({
               <Input name="endTime" type="time" defaultValue={report.endTime ?? ""} />
             </FieldLabel>
             <FieldLabel label="休憩時間(分)">
-              <Input name="breakMinutes" type="number" defaultValue={report.breakMinutes ?? 0} />
+              <Input name="breakMinutes" type="number" min={0} step={1} defaultValue={report.breakMinutes ?? 0} />
             </FieldLabel>
           </div>
           <FieldLabel label="作業内容">
@@ -301,9 +302,9 @@ export default async function DailyReportDetailPage({
               <input type="checkbox" name="reflectToSiteAttendance" defaultChecked /> 出面へ反映
             </label>
           </div>
-          <Button type="submit" variant="secondary" className="w-fit">
+          <PendingSubmitButton variant="secondary" className="w-fit" pendingLabel="追加中…">
             + 作業員を追加
-          </Button>
+          </PendingSubmitButton>
         </form>
       </Card>
 

@@ -15,6 +15,10 @@ import {
 } from "@/lib/timesheet/time";
 import { getOrCreateWorkSettings } from "@/lib/timesheet/settings";
 import type { DailyReportWorkerType } from "@/generated/prisma/enums";
+import type { Prisma } from "@/generated/prisma/client";
+
+type WorkSettings = Awaited<ReturnType<typeof getOrCreateWorkSettings>>;
+type AuditEntry = { companyId: string; userId: string; action: string; targetType: string; targetId: string };
 
 export type DailyReportFormState = { error?: string } | undefined;
 
@@ -216,52 +220,87 @@ export async function addDailyReportWorkerAction(formData: FormData) {
   const reflectToAttendance = formData.get("reflectToAttendance") === "on";
   const reflectToSiteAttendance = formData.get("reflectToSiteAttendance") === "on";
   const workMinutes = computeWorkMinutes(startTime, endTime, breakMinutes);
-  const sortOrder = await prisma.dailyReportWorker.count({ where: { dailyReportId } });
+  const settings = await getOrCreateWorkSettings(user.companyId);
+  const actor = { id: user.id, companyId: user.companyId };
 
-  const worker = await prisma.$transaction(async (tx) => {
-    if (isForeman) {
-      await tx.dailyReportWorker.updateMany({ where: { dailyReportId }, data: { isForeman: false } });
+  // 明細の作成・作業員数の同期・勤怠/出面への反映を1つの保存単位にまとめる。
+  // 途中で失敗したら全部取り消されるので、「明細だけ保存されて出面がない」状態が残らない(F08)。
+  const result = await prisma.$transaction(
+    async (tx) => {
+      // 同じ日報に、同じ人・同じ時間帯の明細がすでにあれば、再送(二度押し・通信の再試行)とみなして
+      // 何も作らない。出面が2件になるのを防ぐ(F07)。別の時間帯なら別の作業として追加できる。
+      const duplicate = await tx.dailyReportWorker.findFirst({
+        where: {
+          dailyReportId,
+          ...(employeeId ? { employeeId } : { employeeId: null, workerName }),
+          startTime,
+          endTime,
+        },
+      });
+      if (duplicate) return { duplicate: true as const };
+
+      if (isForeman) {
+        await tx.dailyReportWorker.updateMany({ where: { dailyReportId }, data: { isForeman: false } });
+      }
+      const sortOrder = await tx.dailyReportWorker.count({ where: { dailyReportId } });
+      const worker = await tx.dailyReportWorker.create({
+        data: {
+          companyId: user.companyId,
+          dailyReportId,
+          employeeId,
+          workerName,
+          workerType,
+          role,
+          startTime,
+          endTime,
+          breakMinutes,
+          workMinutes,
+          manDays: manDaysStr ? Number(manDaysStr) : null,
+          workDescription,
+          isBillable,
+          isForeman,
+          reflectToAttendance,
+          reflectToSiteAttendance,
+          sortOrder,
+        },
+      });
+
+      // 作業員数・職長を既存項目(互換表示用)へ同期する
+      const workerCount = await tx.dailyReportWorker.count({ where: { dailyReportId } });
+      const foreman = await tx.dailyReportWorker.findFirst({ where: { dailyReportId, isForeman: true } });
+      await tx.dailyReport.update({
+        where: { id: dailyReportId },
+        data: { workerCount, foremanName: foreman?.workerName ?? report.foremanName },
+      });
+
+      const reflectAudit = await reflectDailyReportWorker(tx, worker.id, actor, settings);
+      const audit: AuditEntry[] = [
+        {
+          companyId: user.companyId,
+          userId: user.id,
+          action: "laborEntry.create",
+          targetType: "DailyReportWorker",
+          targetId: worker.id,
+        },
+        ...reflectAudit,
+      ];
+      return { duplicate: false as const, audit };
+    },
+    // 無料DBは応答が遅いことがあるため、既定(5秒)より長めに待つ。
+    { timeout: 20_000 }
+  );
+
+  if (!result.duplicate) {
+    for (const entry of result.audit) {
+      await logAction({
+        companyId: entry.companyId,
+        userId: entry.userId,
+        action: entry.action,
+        targetType: entry.targetType,
+        targetId: entry.targetId,
+      });
     }
-    return tx.dailyReportWorker.create({
-      data: {
-        companyId: user.companyId,
-        dailyReportId,
-        employeeId,
-        workerName,
-        workerType,
-        role,
-        startTime,
-        endTime,
-        breakMinutes,
-        workMinutes,
-        manDays: manDaysStr ? Number(manDaysStr) : null,
-        workDescription,
-        isBillable,
-        isForeman,
-        reflectToAttendance,
-        reflectToSiteAttendance,
-        sortOrder,
-      },
-    });
-  });
-
-  // 作業員数・職長を既存項目(互換表示用)へ同期する
-  const workerCount = await prisma.dailyReportWorker.count({ where: { dailyReportId } });
-  const foreman = await prisma.dailyReportWorker.findFirst({ where: { dailyReportId, isForeman: true } });
-  await prisma.dailyReport.update({
-    where: { id: dailyReportId },
-    data: { workerCount, foremanName: foreman?.workerName ?? report.foremanName },
-  });
-
-  await logAction({
-    companyId: user.companyId,
-    userId: user.id,
-    action: "laborEntry.create",
-    targetType: "DailyReportWorker",
-    targetId: worker.id,
-  });
-
-  await reflectDailyReportWorker(worker.id, { id: user.id, companyId: user.companyId });
+  }
 
   revalidatePath(`/daily-reports/${dailyReportId}`);
 }
@@ -290,19 +329,28 @@ export async function deleteDailyReportWorkerAction(formData: FormData) {
  * 作業員明細を勤怠(自社従業員のみ・従業員×日付で1件)・出面(全種別、明細ごとに1件)へ反映する。
  * 反映先がすでに承認済み(APPROVED)・締め済み(CLOSED)の場合は上書きしない
  * (給与・請求の確定後に日報の修正で勝手に変わらないようにするため)。
+ *
+ * 作業員明細の作成と同じ保存単位(トランザクション)の中で呼ぶ。途中で失敗したら明細・勤怠・出面の
+ * すべてが保存されない(一部だけ保存されて再送で重複する、を防ぐ。調査報告F08)。
+ * 操作ログは保存確定後に書くため、書くべき内容を戻り値で返す。
  */
-async function reflectDailyReportWorker(workerId: string, actor: { id: string; companyId: string }) {
-  const worker = await prisma.dailyReportWorker.findUnique({
+async function reflectDailyReportWorker(
+  db: Prisma.TransactionClient,
+  workerId: string,
+  actor: { id: string; companyId: string },
+  settings: WorkSettings
+): Promise<AuditEntry[]> {
+  const audit: AuditEntry[] = [];
+  const worker = await db.dailyReportWorker.findUnique({
     where: { id: workerId },
     include: { dailyReport: true },
   });
-  if (!worker) return;
+  if (!worker) return audit;
 
   const clockIn = worker.startTime ? jstWallTimeToUtc(worker.dailyReport.reportDate, worker.startTime) : null;
   const clockOut = worker.endTime ? jstWallTimeToUtc(worker.dailyReport.reportDate, worker.endTime) : null;
 
   if (worker.reflectToAttendance && worker.employeeId) {
-    const settings = await getOrCreateWorkSettings(actor.companyId);
     // 日報からの反映では休日出勤・有給等の区分までは分からないため、いったん通常勤務として
     // 普通/残業時間を計算する(区分の修正は勤怠の確認・承認画面で行う想定)。
     const breakdown = computeAttendanceBreakdown({
@@ -317,11 +365,11 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
       settings.nightShiftEndTime
     );
 
-    const existing = await prisma.attendance.findUnique({
+    const existing = await db.attendance.findUnique({
       where: { employeeId_targetDate: { employeeId: worker.employeeId, targetDate: worker.dailyReport.reportDate } },
     });
     if (!existing) {
-      const created = await prisma.attendance.create({
+      const created = await db.attendance.create({
         data: {
           companyId: actor.companyId,
           employeeId: worker.employeeId,
@@ -339,8 +387,8 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
           createdByUserId: actor.id,
         },
       });
-      await prisma.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: created.id } });
-      await logAction({
+      await db.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: created.id } });
+      audit.push({
         companyId: actor.companyId,
         userId: actor.id,
         action: "attendance.create",
@@ -350,7 +398,7 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
     } else if (existing.status === "DRAFT" || existing.status === "REJECTED") {
       // 同じ人が同じ日に別の現場の日報にも出ている場合、その分とまとめて1日分を計算し直す
       // (以前は後から反映した現場の時間で上書きしており、3時間+4時間が4時間になっていた)。
-      const alreadyLinked = await prisma.dailyReportWorker.findMany({
+      const alreadyLinked = await db.dailyReportWorker.findMany({
         where: { attendanceId: existing.id, reflectToAttendance: true, id: { not: worker.id } },
         include: { dailyReport: { select: { reportDate: true } } },
       });
@@ -369,7 +417,7 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
         const remarks = existing.remarks?.includes(OVERLAP_REMARK)
           ? existing.remarks
           : [OVERLAP_REMARK, existing.remarks].filter(Boolean).join("\n");
-        await prisma.attendance.update({
+        await db.attendance.update({
           where: { id: existing.id },
           data: { remarks, updatedByUserId: actor.id },
         });
@@ -386,7 +434,7 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
           ? null
           : nightPerInterval.reduce<number>((sum, n) => sum + (n ?? 0), 0);
 
-        await prisma.attendance.update({
+        await db.attendance.update({
           where: { id: existing.id },
           data: {
             sourceDailyReportId: worker.dailyReportId,
@@ -403,8 +451,8 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
           },
         });
       }
-      await prisma.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
-      await logAction({
+      await db.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
+      audit.push({
         companyId: actor.companyId,
         userId: actor.id,
         action: "attendance.update",
@@ -413,7 +461,7 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
       });
     } else {
       // 承認済み・締め済み: 上書きしない。表示用にリンクだけ張る(画面側で「反映済み(承認済み)」等と示す)
-      await prisma.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
+      await db.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
     }
   }
 
@@ -421,7 +469,7 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
     // 出面には勤怠のような「本人が見直して提出する」自己申告画面がなく、日報を保存した
     // 時点で内容は確認済みとみなせるため、下書きを経由せず提出済みとして作成する
     // (管理者がsite-attendance画面で承認・差し戻しを行う)。
-    const created = await prisma.siteAttendance.create({
+    const created = await db.siteAttendance.create({
       data: {
         companyId: actor.companyId,
         targetDate: worker.dailyReport.reportDate,
@@ -442,8 +490,8 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
         createdByUserId: actor.id,
       },
     });
-    await prisma.dailyReportWorker.update({ where: { id: worker.id }, data: { siteAttendanceId: created.id } });
-    await logAction({
+    await db.dailyReportWorker.update({ where: { id: worker.id }, data: { siteAttendanceId: created.id } });
+    audit.push({
       companyId: actor.companyId,
       userId: actor.id,
       action: "laborEntry.create",
@@ -451,4 +499,6 @@ async function reflectDailyReportWorker(workerId: string, actor: { id: string; c
       targetId: created.id,
     });
   }
+
+  return audit;
 }
