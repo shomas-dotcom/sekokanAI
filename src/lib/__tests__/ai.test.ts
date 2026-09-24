@@ -46,6 +46,27 @@ describe("draftDailyReportFromText (モック実装)", () => {
     expect(draft.unclearItems.some((i) => i.field === "職長")).toBe(true);
   });
 
+  it("調査報告の例文から現場名・人数・開始/終了時刻を拾う(F20、AIが使えない時の予備処理)", async () => {
+    const draft = await draftDailyReportFromText(
+      "今日は山口現場、杉本、田中、佐藤の3人。8時から17時。0.1バックホウ1台、3tダンプ2台、残土3台。明日はブロック積み。"
+    );
+    expect(draft.siteName).toBe("山口");
+    expect(draft.workerCount).toBe(3);
+    expect(draft.startTime).toBe("08:00");
+    expect(draft.endTime).toBe("17:00");
+    expect(draft.nextDayPlan).toContain("ブロック積み");
+  });
+
+  it("「〇〇建設の現場」のように現場名がはっきりしない言い方では、推測で埋めない", async () => {
+    const draft = await draftDailyReportFromText("今日は〇〇建設の現場。");
+    expect(draft.siteName).toBeNull();
+  });
+
+  it("「5人工」は人数として読まない", async () => {
+    const draft = await draftDailyReportFromText("本日5人工。");
+    expect(draft.workerCount).toBeNull();
+  });
+
   it("使用車両(ダンプ等)は使用機械とは別枠として抽出する", async () => {
     const draft = await draftDailyReportFromText("4トンダンプで残土搬出。0.25BH使用。");
     expect(draft.vehicles).toContain("ダンプ");

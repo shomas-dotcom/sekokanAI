@@ -468,14 +468,16 @@ startTime/endTimeは"HH:mm"形式にしてください。
 function mockDraftDailyReport(rawText: string): DailyReportDraft {
   const unclearItems: { field: string; note: string }[] = [];
 
-  const siteMatch = rawText.match(/現場は?([^\s、。]+)/);
+  // 「現場は山口」と「山口現場」の両方の言い方に対応する(調査報告F20: 例文の「山口現場」を拾えなかった)。
+  const siteMatch = rawText.match(/現場は?([^\s、。]+)/) ?? rawText.match(/([^\s、。はの]+)現場/);
   const siteName = siteMatch ? siteMatch[1] : null;
   if (!siteName) unclearItems.push({ field: "現場名", note: "音声からは特定できませんでした" });
 
   const weather = WEATHER_WORDS.find((w) => rawText.includes(w)) ?? null;
   if (!weather) unclearItems.push({ field: "天候", note: "音声からは特定できませんでした" });
 
-  const workerMatch = rawText.match(/作業員\s*(\d+)\s*名/);
+  // 「作業員4名」のほか「〜の3人」「5名」にも対応する。
+  const workerMatch = rawText.match(/作業員\s*(\d+)\s*名/) ?? rawText.match(/(\d+)\s*(?:人|名)(?!工)/);
   const workerCount = workerMatch ? Number(workerMatch[1]) : null;
   if (workerCount === null) unclearItems.push({ field: "作業員数", note: "音声からは特定できませんでした" });
 
@@ -507,7 +509,8 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
   const startTime = startMatch ? toHHMM(startMatch[1]) : null;
   if (!startTime) unclearItems.push({ field: "開始時間", note: "音声からは特定できませんでした" });
 
-  const endMatch = rawText.match(/(\d{1,2})時\s*(?:終了|まで)/);
+  // 「17時終了」「17時まで」のほか「8時から17時」の後ろ側も終了時刻として読む。
+  const endMatch = rawText.match(/(\d{1,2})時\s*(?:終了|まで)/) ?? rawText.match(/から\s*(\d{1,2})時/);
   const endTime = endMatch ? toHHMM(endMatch[1]) : null;
   if (!endTime) unclearItems.push({ field: "終了時間", note: "音声からは特定できませんでした" });
 
