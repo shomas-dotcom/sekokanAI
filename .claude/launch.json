@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "genba-ai-test",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/test-db/dev.mjs"],
+      "port": 3100
     }
   ]
 }

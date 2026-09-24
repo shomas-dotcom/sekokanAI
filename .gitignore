@@ -64,3 +64,7 @@ next-env.d.ts
 
 # uploads (local dev storage stand-in for S3互換ストレージ)
 /uploads
+
+# 試験用データベース(tools/test-db)の部品とデータ
+/tools/test-db/node_modules
+/tools/test-db/data
