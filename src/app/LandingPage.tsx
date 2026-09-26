@@ -129,7 +129,7 @@ export function LandingPage() {
           <p className="mt-2 text-4xl font-bold">
             9,800<span className="text-lg font-normal">円/月</span>
           </p>
-          <p className="mt-1 text-sm text-slate-400">(税込価格は別途表示・5ユーザーまで)</p>
+          <p className="mt-1 text-sm text-slate-400">(税込・5ユーザーまで)</p>
           <p className="mt-4 text-sm text-slate-300">14日間無料体験あり</p>
         </div>
       </section>

@@ -1,13 +1,12 @@
 import { prisma } from "../src/lib/prisma";
 
-// 現場AIの初期料金プラン(ライト/スタンダード/プロ)を投入する。
+// 現場AIの初期料金プランを投入する。2026-09-26 事業者決定で「ライト 月額9,800円(税込)」のみ。
+// (以前あったスタンダード/プロは、既存DBでは消さずに「新規契約の選択肢に表示しない」にしている)
 // key(コードから安定して参照するための識別子)でupsertするため、何度実行しても
 // 既存プランを壊さない。金額は運営者が管理画面(/admin/plans)からいつでも変更できる —
 // ここでの値はあくまで初期値。
 const PLANS = [
   { key: "light", name: "ライト", monthlyPrice: 9_800, setupFee: 0, sortOrder: 1 },
-  { key: "standard", name: "スタンダード", monthlyPrice: 19_800, setupFee: 0, sortOrder: 2 },
-  { key: "pro", name: "プロ", monthlyPrice: 49_800, setupFee: 0, sortOrder: 3 },
 ] as const;
 
 async function main() {

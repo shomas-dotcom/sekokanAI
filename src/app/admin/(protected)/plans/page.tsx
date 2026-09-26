@@ -32,11 +32,11 @@ export default async function AdminPlansPage() {
                   <Input name="name" defaultValue={plan.name} required />
                 </Label>
                 <Label>
-                  月額(円・税抜)
+                  月額(円・税込)
                   <Input name="monthlyPrice" type="number" min={0} defaultValue={plan.monthlyPrice} required />
                 </Label>
                 <Label>
-                  初期費用(円・税抜)
+                  初期費用(円・税込)
                   <Input name="setupFee" type="number" min={0} defaultValue={plan.setupFee} required />
                 </Label>
               </div>
@@ -69,11 +69,11 @@ export default async function AdminPlansPage() {
               <Input name="name" placeholder="例: エンタープライズ" required />
             </Label>
             <Label>
-              月額(円・税抜)
+              月額(円・税込)
               <Input name="monthlyPrice" type="number" min={0} defaultValue={0} required />
             </Label>
             <Label>
-              初期費用(円・税抜)
+              初期費用(円・税込)
               <Input name="setupFee" type="number" min={0} defaultValue={0} required />
             </Label>
           </div>
