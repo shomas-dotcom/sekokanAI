@@ -18,7 +18,7 @@ export default function AiDisclaimerPage() {
       <section>
         <h2 className="font-semibold text-slate-900">個人情報・機微情報の扱い</h2>
         <p>
-          氏名・資格情報等の個人情報、マイナンバー・健康情報・銀行情報等の機微情報は、AI(外部API)へ送信しない設計としています。
+          AIによる読み取り・下書き作成を指示した書類・画像・文章(名刺・注文書・見積書・伝票・音声日報等)は、そこに含まれる氏名・連絡先等も含めて、外部のAI事業者(Anthropic、米国)へ送信されます。マイナンバー・健康情報・銀行口座情報等の機微情報を含む書類は、AIによる読み取りに使わないでください。
         </p>
       </section>
       <section>
