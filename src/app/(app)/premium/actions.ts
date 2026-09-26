@@ -2,19 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireUser, requireAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { isStripeConfigured } from "@/lib/stripe";
+import { isMockBillingAllowed } from "@/lib/stripe";
 
 /**
- * デモ用のプラン切り替え。実際の決済は行わない。Stripe設定済みの環境では、
- * 実際の契約状態と食い違う操作をさせないためこの関数自体を無効化する
+ * デモ用のプラン切り替え。実際の決済は行わない。Stripe設定済みの環境と、
+ * Stripe未設定の本番では、無料で有料プランにできてしまうためこの関数自体を無効化する
  * (画面側で隠すだけでなく、直接POSTされた場合にもここで必ず拒否する)。
  */
 export async function togglePlanAction() {
   const user = await requireAdmin();
-  if (isStripeConfigured()) redirect("/billing");
+  if (!isMockBillingAllowed()) redirect("/billing");
   const current = await prisma.company.findUniqueOrThrow({ where: { id: user.companyId } });
   const next = current.plan === "PREMIUM" ? "FREE" : "PREMIUM";
 

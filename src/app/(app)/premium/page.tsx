@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { isPremium } from "@/lib/premium";
-import { isStripeConfigured } from "@/lib/stripe";
+import { isMockBillingAllowed } from "@/lib/stripe";
 import { Card, Badge, Button } from "@/components/ui";
 import { PREMIUM_FEATURES } from "./features";
 import { togglePlanAction } from "./actions";
@@ -9,7 +9,8 @@ import { togglePlanAction } from "./actions";
 export default async function PremiumPage() {
   const user = await requireUser();
   const premium = isPremium(user.company);
-  const configured = isStripeConfigured();
+  // デモ切替が使えない環境(Stripe設定済み・本番)では「ご契約」画面へ案内する。
+  const configured = !isMockBillingAllowed();
 
   return (
     <div className="flex flex-col gap-6">

@@ -8,6 +8,17 @@ export function isStripeConfigured(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY);
 }
 
+/**
+ * 課金なしの「デモ用プラン切替」「疑似トライアル」を使ってよいか。
+ * 本番(NODE_ENV=production)では、Stripe未設定でも既定で使わせない。
+ * 使わせると、誰でも登録するだけで有料プランを無料で有効にできてしまうため。
+ * 本番で意図的に試す場合だけ ALLOW_MOCK_BILLING=true を設定する。
+ */
+export function isMockBillingAllowed(): boolean {
+  if (isStripeConfigured()) return false;
+  return process.env.NODE_ENV !== "production" || process.env.ALLOW_MOCK_BILLING === "true";
+}
+
 let stripeClient: Stripe | null = null;
 
 function getStripeClient(): Stripe {

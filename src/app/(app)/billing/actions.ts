@@ -4,7 +4,12 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { isStripeConfigured, createCheckoutSession, createBillingPortalSession } from "@/lib/stripe";
+import {
+  isStripeConfigured,
+  isMockBillingAllowed,
+  createCheckoutSession,
+  createBillingPortalSession,
+} from "@/lib/stripe";
 
 export type BillingState = { error?: string } | undefined;
 
@@ -19,6 +24,9 @@ export async function startSubscriptionAction(
   const user = await requireAdmin();
 
   if (!isStripeConfigured()) {
+    if (!isMockBillingAllowed()) {
+      return { error: "現在、お申し込みの受付準備中です。お手数ですがお問い合わせページからご連絡ください。" };
+    }
     // 開発用の疑似トライアル。実際の決済は一切発生しない。
     // Stripe未設定の環境でも、契約〜プレミアム機能利用までの流れを確認できるようにする。
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);

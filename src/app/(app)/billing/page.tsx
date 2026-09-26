@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { isStripeConfigured } from "@/lib/stripe";
+import { isStripeConfigured, isMockBillingAllowed } from "@/lib/stripe";
 import { Card, Badge } from "@/components/ui";
 import { SUBSCRIPTION_STATUS_LABEL } from "./statusLabel";
 import { StartSubscriptionForm, BillingPortalForm } from "./BillingForms";
@@ -42,10 +42,15 @@ export default async function BillingPage({
           開発用の疑似トライアルを開始しました(実際の課金は発生していません)。Stripeを設定すると、実際の決済に切り替わります。
         </Card>
       )}
-      {!configured && (
+      {!configured && isMockBillingAllowed() && (
         <Card className="border-amber-200 bg-amber-50 text-sm text-amber-800">
           Stripeが未設定のため、下のボタンは開発用の疑似トライアル(無課金)として動作します。実際に課金を行うには、環境変数
           STRIPE_SECRET_KEY / STRIPE_PRICE_ID / STRIPE_WEBHOOK_SECRET の設定が必要です。
+        </Card>
+      )}
+      {!configured && !isMockBillingAllowed() && (
+        <Card className="border-amber-200 bg-amber-50 text-sm text-amber-800">
+          現在、有料プランのお申し込みは受付準備中です。ご利用をご希望の方はお問い合わせページからご連絡ください。
         </Card>
       )}
 

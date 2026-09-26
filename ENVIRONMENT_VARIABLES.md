@@ -13,7 +13,8 @@
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 任意 | 未設定時は「Googleでログイン/登録」ボタン自体が非表示になる(通常のメール登録・ログインには影響しない)。Google Cloud ConsoleでOAuthクライアントを作成し、承認済みリダイレクトURIに `{APP_URL}/api/auth/google/callback` を登録して発行する | 未設定 |
 | `RESEND_API_KEY` | 任意 | 未設定時はメール送信がログ出力のみのモックで動作する(メール認証・パスワード再設定に影響) | 未設定 |
 | `EMAIL_FROM` | 任意 | 送信元メールアドレス | 未設定 |
-| `STRIPE_SECRET_KEY` | 任意 | 未設定時は決済が「開発用の疑似トライアル」で動作する(実課金なし) | 未設定 |
+| `STRIPE_SECRET_KEY` | 販売開始時必須 | 未設定時、開発中は決済が「開発用の疑似トライアル」で動作する(実課金なし)。本番(NODE_ENV=production)では疑似トライアル・デモ切替を使わせず「受付準備中」と表示する(2026-09-26変更。誰でも無料で有料プランにできてしまうのを防ぐため) | 未設定 |
+| `ALLOW_MOCK_BILLING` | 任意 | `true` のときだけ、本番でもStripe未設定なら疑似トライアル・デモ切替を使える。本番での販売開始後は設定しないこと | 未設定 |
 | `STRIPE_WEBHOOK_SECRET` | Stripe利用時必須 | Webhookの署名検証に使用 | 未設定 |
 | `STRIPE_PUBLISHABLE_KEY` | 現状未使用 | 将来クライアント側でStripe.jsを使う場合に備えて用意 | 未設定 |
 | `STRIPE_PRICE_ID` | Stripe利用時必須 | 月額9,800円プランのPrice ID(`price_`で始まる) | 未設定 |
