@@ -27,6 +27,16 @@ npm install
 
 中身を全部消して作り直すときは `node tools/test-db/start.mjs --reset`。
 
+4. 自動試験を全部(DBに書き込む `*.db.test.ts` も含めて)動かす
+   `npm run test:db`
+   ふだんの `npm test` は `.env` の接続先(本番)を見て、DBに書き込む試験を自動で飛ばします。
+5. 本番と同じ動き(NODE_ENV=production)で画面を確かめる → http://localhost:3200
+   `npm run build` のあと `node tools/test-db/prod.mjs`
+   (デモ用プラン切替が本番で隠れているか等、リリース前の確認用)
+
+試験用DBの接続先を変えたいとき(別の番号で起動した場合など)は、`test.mjs`・`prod.mjs` の前に
+環境変数 `TEST_DATABASE_URL` を設定してください。
+
 ## 試験用アカウント(架空・試験用DB専用)
 
 | メール | 役割 |

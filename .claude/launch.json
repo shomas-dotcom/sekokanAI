@@ -12,6 +12,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["tools/test-db/dev.mjs"],
       "port": 3100
+    },
+    {
+      "name": "genba-ai-prodcheck",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/test-db/prod.mjs"],
+      "port": 3200
     }
   ]
 }
