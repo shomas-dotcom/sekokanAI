@@ -6,7 +6,9 @@ services:
   - type: web
     name: genba-ai
     runtime: node
-    plan: free
+    # 2026-09-26 事業者決定で有料(Starter: 0.5CPU/512MB、月$7)にする。無料だと15分で眠り、
+    # 次の表示まで数十秒かかるため。切替自体はRenderの画面(Settings → Instance Type)で行う。
+    plan: starter
     # NODE_ENV=production だと npm install が devDependencies(prisma CLI含む)を
     # 省略してしまうため --include=dev が必須(DEPLOYMENT.mdのトラブル対応履歴参照)
     buildCommand: npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build
