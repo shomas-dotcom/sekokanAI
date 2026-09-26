@@ -16,6 +16,8 @@ const WORK_CATEGORIES: WorkCategory[] = [
   "ABSENCE",
   "LATE",
   "EARLY_LEAVE",
+  "BUSINESS_TRIP",
+  "TRAVEL_DAY",
 ];
 
 /**

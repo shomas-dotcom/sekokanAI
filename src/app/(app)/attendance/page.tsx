@@ -13,6 +13,8 @@ const CATEGORY_LABEL: Record<string, string> = {
   ABSENCE: "欠勤",
   LATE: "遅刻",
   EARLY_LEAVE: "早退",
+  BUSINESS_TRIP: "出張",
+  TRAVEL_DAY: "移動日",
 };
 
 const STATUS_LABEL: Record<string, string> = {
