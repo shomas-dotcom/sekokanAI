@@ -57,7 +57,10 @@ export async function GET(request: Request) {
       jobType: r.jobType,
       workContent: r.workContent,
       manDays: r.manDays,
+      isBillable: r.isBillable,
+      isCostTarget: r.isCostTarget,
       manDayUnitPrice: r.manDayUnitPrice,
+      laborCostUnitPrice: r.laborCostUnitPrice,
     })),
     expenseRows: expenseRecords.map((e) => ({
       projectName: e.project.name,

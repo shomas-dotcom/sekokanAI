@@ -71,7 +71,23 @@ describe("buildSiteAttendanceXlsx", () => {
           jobType: "土工",
           workContent: "As舗装工",
           manDays: 1,
+          isBillable: true,
+          isCostTarget: true,
           manDayUnitPrice: 20000,
+          laborCostUnitPrice: 15000,
+        },
+        {
+          primeContractorName: "日本道路株式会社",
+          projectName: "坂戸市道舗装工事",
+          targetDate: new Date(Date.UTC(2026, 8, 2)),
+          workerName: "田中",
+          jobType: "土工",
+          workContent: "As舗装工",
+          manDays: 1,
+          isBillable: true,
+          isCostTarget: true,
+          manDayUnitPrice: 20000,
+          laborCostUnitPrice: null,
         },
       ],
       expenseRows: [
@@ -98,5 +114,12 @@ describe("buildSiteAttendanceXlsx", () => {
     expect(values).toContain("日本道路株式会社");
     expect(values).toContain("バックホウ");
     expect(values.some((v) => v.includes("月間合計"))).toBe(true);
+    // 請求と原価を別の列に出し、原価未入力は0円で埋めず件数を書く(F10)
+    expect(values).toContain("請求単価");
+    expect(values).toContain("原価単価");
+    expect(values).toContain("40000"); // 請求合計 20,000×2
+    expect(values).toContain("15000"); // 原価合計(未入力の1件は含めない)
+    expect(values).toContain("単価未入力があるため計算しません");
+    expect(values.some((v) => v.includes("原価 1件"))).toBe(true);
   });
 });

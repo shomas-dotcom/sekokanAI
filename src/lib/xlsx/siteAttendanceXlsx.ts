@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { amountOf, sumRows } from "@/lib/timesheet/siteAttendanceTotals";
 
 export type SiteAttendanceXlsxLaborRow = {
   primeContractorName: string | null;
@@ -8,7 +9,10 @@ export type SiteAttendanceXlsxLaborRow = {
   jobType: string | null;
   workContent: string | null;
   manDays: number;
-  manDayUnitPrice: number | null;
+  isBillable: boolean;
+  isCostTarget: boolean;
+  manDayUnitPrice: number | null; // 請求単価
+  laborCostUnitPrice: number | null; // 原価単価
 };
 
 export type SiteAttendanceXlsxExpenseRow = {
@@ -35,15 +39,26 @@ export async function buildSiteAttendanceXlsx(params: {
   ws.getRow(1).font = { bold: true, size: 14 };
   ws.addRow([]);
 
-  const laborHeaders = ["元請会社", "現場名", "日付", "作業員名", "職種", "作業内容", "人工数", "人工単価", "人工金額"];
+  // 請求(元請へ請求する額)と原価(自社の労務費)を別の列にする(調査報告F10)。
+  // 未入力は空欄のまま(0円として埋めない)にし、合計の下に未入力件数を書く。
+  const laborHeaders = [
+    "元請会社",
+    "現場名",
+    "日付",
+    "作業員名",
+    "職種",
+    "作業内容",
+    "人工数",
+    "請求単価",
+    "請求金額",
+    "原価単価",
+    "原価金額",
+  ];
   const laborHeaderRow = ws.addRow(laborHeaders);
   laborHeaderRow.font = { bold: true };
   laborHeaderRow.eachCell((cell) => (cell.border = { bottom: { style: "thin" } }));
 
-  let laborTotal = 0;
   for (const r of params.laborRows) {
-    const amount = r.manDayUnitPrice != null ? Math.round(r.manDays * r.manDayUnitPrice) : null;
-    if (amount != null) laborTotal += amount;
     ws.addRow([
       r.primeContractorName ?? "",
       r.projectName,
@@ -53,11 +68,38 @@ export async function buildSiteAttendanceXlsx(params: {
       r.workContent ?? "",
       r.manDays,
       r.manDayUnitPrice ?? "",
-      amount ?? "",
+      r.isBillable ? (amountOf(r.manDays, r.manDayUnitPrice) ?? "") : "請求対象外",
+      r.laborCostUnitPrice ?? "",
+      r.isCostTarget ? (amountOf(r.manDays, r.laborCostUnitPrice) ?? "") : "原価対象外",
     ]);
   }
-  const laborTotalRow = ws.addRow(["", "", "", "", "", "人工金額 合計", "", "", laborTotal]);
+  const totals = sumRows(params.laborRows);
+  const laborTotal = totals.billing;
+  const laborTotalRow = ws.addRow(["", "", "", "", "", "合計", "", "", totals.billing, "", totals.laborCost]);
   laborTotalRow.font = { bold: true };
+  ws.addRow([
+    "",
+    "",
+    "",
+    "",
+    "",
+    "粗利(請求−原価)",
+    "",
+    "",
+    "",
+    "",
+    totals.grossProfit ?? "単価未入力があるため計算しません",
+  ]);
+  if (totals.billingMissing > 0 || totals.laborCostMissing > 0) {
+    ws.addRow([
+      "",
+      "",
+      "",
+      "",
+      "",
+      `単価未入力: 請求 ${totals.billingMissing}件 / 原価 ${totals.laborCostMissing}件(合計には含めていません)`,
+    ]);
+  }
 
   ws.addRow([]);
   const expenseHeaders = ["現場名", "日付", "区分", "名称", "数量", "単価", "金額"];
@@ -82,7 +124,7 @@ export async function buildSiteAttendanceXlsx(params: {
   expenseTotalRow.font = { bold: true };
 
   ws.addRow([]);
-  const grandTotalRow = ws.addRow(["", "", "", "", "", "月間合計(人工金額+車両重機経費)", laborTotal + expenseTotal]);
+  const grandTotalRow = ws.addRow(["", "", "", "", "", "月間合計(請求金額+車両重機経費)", laborTotal + expenseTotal]);
   grandTotalRow.font = { bold: true };
   grandTotalRow.eachCell((cell) => (cell.border = { top: { style: "double" } }));
 

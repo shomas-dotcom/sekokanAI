@@ -8,6 +8,31 @@ import {
   updateSiteAttendancePricingAction,
 } from "./actions";
 import { getSupervisedProjectIds } from "@/lib/timesheet/permissions";
+import {
+  addToTotals,
+  emptyTotals,
+  type SiteAttendanceAmountTotals,
+} from "@/lib/timesheet/siteAttendanceTotals";
+
+/** 金額と、その下に未入力の件数(あれば)を表示する。未入力を0円と見間違えないため。 */
+function AmountWithMissing({ amount, missing, label }: { amount: number; missing: number; label: string }) {
+  return (
+    <div className="flex flex-col">
+      <span>{amount.toLocaleString("ja-JP")}円</span>
+      {missing > 0 && (
+        <span className="text-xs text-amber-700">
+          ⚠ {label} {missing}件
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** 粗利。単価の未入力があるときは計算しない(見かけだけの利益を出さない)。 */
+function GrossProfit({ value }: { value: number | null }) {
+  if (value == null) return <span className="text-slate-400">—(未入力あり)</span>;
+  return <span className={value < 0 ? "text-rose-600" : undefined}>{value.toLocaleString("ja-JP")}円</span>;
+}
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: "下書き",
@@ -74,8 +99,9 @@ export default async function SiteAttendancePage({
       })
     : [];
 
-  type Group = { key: string; manDays: number; workMinutes: number; laborCost: number; billing: number };
+  type Group = { key: string; manDays: number; workMinutes: number; amounts: SiteAttendanceAmountTotals };
   const groups = new Map<string, Group>();
+  const overall = emptyTotals();
   for (const r of records) {
     let key: string;
     switch (groupBy) {
@@ -94,11 +120,12 @@ export default async function SiteAttendancePage({
       default:
         key = r.project.name;
     }
-    const g = groups.get(key) ?? { key, manDays: 0, workMinutes: 0, laborCost: 0, billing: 0 };
+    const g = groups.get(key) ?? { key, manDays: 0, workMinutes: 0, amounts: emptyTotals() };
     g.manDays += r.manDays;
     g.workMinutes += r.workMinutes ?? 0;
-    if (r.manDayUnitPrice != null) g.laborCost += r.manDays * r.manDayUnitPrice;
-    if (r.isBillable && r.amount != null) g.billing += r.amount;
+    // 労務原価は原価単価、請求予定額は請求単価で別々に計算する(以前は同じ単価を両方に使っていた)。
+    addToTotals(g.amounts, r);
+    addToTotals(overall, r);
     groups.set(key, g);
   }
   const expenseTotal = expenses.reduce((sum, e) => sum + (e.amount ?? 0), 0);
@@ -161,21 +188,31 @@ export default async function SiteAttendancePage({
                 <th className="py-1 pr-2">作業時間(h)</th>
                 {isAdmin && <th className="py-1 pr-2">労務原価</th>}
                 {isAdmin && <th className="py-1 pr-2">請求予定額</th>}
+                {isAdmin && <th className="py-1 pr-2">粗利</th>}
               </tr>
             </thead>
             <tbody>
               {[...groups.values()].map((g) => (
-                <tr key={g.key} className="border-t border-slate-100">
+                <tr key={g.key} className="border-t border-slate-100 align-top">
                   <td className="py-1 pr-2">{g.key}</td>
                   <td className="py-1 pr-2">{g.manDays}</td>
                   <td className="py-1 pr-2">{(g.workMinutes / 60).toFixed(1)}</td>
-                  {isAdmin && <td className="py-1 pr-2">{g.laborCost.toLocaleString("ja-JP")}円</td>}
-                  {isAdmin && <td className="py-1 pr-2">{g.billing.toLocaleString("ja-JP")}円</td>}
+                  {isAdmin && (
+                    <td className="py-1 pr-2">
+                      <AmountWithMissing amount={g.amounts.laborCost} missing={g.amounts.laborCostMissing} label="原価未入力" />
+                    </td>
+                  )}
+                  {isAdmin && (
+                    <td className="py-1 pr-2">
+                      <AmountWithMissing amount={g.amounts.billing} missing={g.amounts.billingMissing} label="請求単価未入力" />
+                    </td>
+                  )}
+                  {isAdmin && <td className="py-1 pr-2"><GrossProfit value={g.amounts.grossProfit} /></td>}
                 </tr>
               ))}
               {groups.size === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 5 : 3} className="py-3 text-center text-slate-500">
+                  <td colSpan={isAdmin ? 6 : 3} className="py-3 text-center text-slate-500">
                     データがありません。
                   </td>
                 </tr>
@@ -184,10 +221,22 @@ export default async function SiteAttendancePage({
           </table>
         </div>
         {isAdmin && (
-          <p className="mt-2 text-xs text-slate-500">
-            車両・重機・経費(月間合計): {expenseTotal.toLocaleString("ja-JP")}円 / 合計金額(労務+車両重機経費):{" "}
-            {([...groups.values()].reduce((s, g) => s + g.billing, 0) + expenseTotal).toLocaleString("ja-JP")}円
-          </p>
+          <div className="mt-2 flex flex-col gap-1 text-xs text-slate-500">
+            <p>
+              月間合計: 労務原価 {overall.laborCost.toLocaleString("ja-JP")}円 / 請求予定額{" "}
+              {overall.billing.toLocaleString("ja-JP")}円 / 粗利 <GrossProfit value={overall.grossProfit} />
+            </p>
+            {(overall.laborCostMissing > 0 || overall.billingMissing > 0) && (
+              <p className="text-amber-700">
+                単価が未入力の出面があります(原価 {overall.laborCostMissing}件・請求 {overall.billingMissing}件)。
+                0円として足していないため、粗利は全件入力されるまで表示しません。下の一覧で入力してください。
+              </p>
+            )}
+            <p>
+              車両・重機・経費(月間合計): {expenseTotal.toLocaleString("ja-JP")}円 / 合計金額(請求予定額+車両重機経費):{" "}
+              {(overall.billing + expenseTotal).toLocaleString("ja-JP")}円
+            </p>
+          </div>
         )}
       </Card>
 
@@ -221,7 +270,7 @@ export default async function SiteAttendancePage({
                 <th className="py-1 pr-2">氏名</th>
                 <th className="py-1 pr-2">職種</th>
                 <th className="py-1 pr-2">人工数</th>
-                {isAdmin && <th className="py-1 pr-2">単価</th>}
+                {isAdmin && <th className="py-1 pr-2">請求単価 / 原価単価</th>}
                 <th className="py-1 pr-2">状態</th>
                 {canApprove && <th className="py-1"></th>}
               </tr>
@@ -232,22 +281,44 @@ export default async function SiteAttendancePage({
                   <td className="py-1 pr-2">{r.targetDate.toLocaleDateString("ja-JP")}</td>
                   <td className="py-1 pr-2">{r.project.primeContractorName ?? "—"}</td>
                   <td className="py-1 pr-2">{r.project.name}</td>
-                  <td className="py-1 pr-2">{r.workerName}</td>
+                  <td className="py-1 pr-2 whitespace-nowrap">{r.workerName}</td>
                   <td className="py-1 pr-2">{r.jobType ?? "—"}</td>
                   <td className="py-1 pr-2">{r.manDays}</td>
                   {isAdmin && (
                     <td className="py-1 pr-2">
                       {r.status === "CLOSED" ? (
-                        r.manDayUnitPrice != null ? `${r.manDayUnitPrice.toLocaleString("ja-JP")}円` : "—"
+                        <span>
+                          請求 {r.manDayUnitPrice != null ? `${r.manDayUnitPrice.toLocaleString("ja-JP")}円` : "—"} / 原価{" "}
+                          {r.laborCostUnitPrice != null ? `${r.laborCostUnitPrice.toLocaleString("ja-JP")}円` : "未入力"}
+                        </span>
                       ) : (
-                        <form action={updateSiteAttendancePricingAction} className="flex items-center gap-1">
+                        <form action={updateSiteAttendancePricingAction} className="flex flex-wrap items-center gap-1">
                           <input type="hidden" name="id" value={r.id} />
-                          <Input
-                            name="manDayUnitPrice"
-                            type="number"
-                            defaultValue={r.manDayUnitPrice ?? ""}
-                            className="w-20"
-                          />
+                          <label className="flex items-center gap-1 text-xs text-slate-500">
+                            請求
+                            <Input
+                              name="manDayUnitPrice"
+                              type="number"
+                              min={0}
+                              step={1}
+                              inputMode="numeric"
+                              defaultValue={r.manDayUnitPrice ?? ""}
+                              className="w-28!"
+                            />
+                          </label>
+                          <label className="flex items-center gap-1 text-xs text-slate-500">
+                            原価
+                            <Input
+                              name="laborCostUnitPrice"
+                              type="number"
+                              min={0}
+                              step={1}
+                              inputMode="numeric"
+                              placeholder="未入力"
+                              defaultValue={r.laborCostUnitPrice ?? ""}
+                              className="w-28!"
+                            />
+                          </label>
                           <button type="submit" className="text-xs text-indigo-600 underline">
                             設定
                           </button>
