@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireAdmin } from "@/lib/auth";
 import { isPremium } from "@/lib/premium";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
@@ -327,4 +327,29 @@ export async function deleteQuoteItemAction(formData: FormData) {
 
   revalidatePath(`/quotes/${quoteId}`);
   redirect(`/quotes/${quoteId}`);
+}
+
+/**
+ * 見積に固定した会社雛形バージョンを解除する(選び間違えたときの救済用)。
+ * 一度Excel出力すると雛形は自動で固定される(発行後に雛形を編集しても内容が変わらないようにするため)が、
+ * 出力し直す前ならここで解除して選び直せる。
+ */
+export async function resetQuoteTemplateAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const quoteId = String(formData.get("quoteId") ?? "");
+
+  await prisma.quote.updateMany({
+    where: { id: quoteId, companyId: admin.companyId },
+    data: { templateVersionId: null },
+  });
+
+  await logAction({
+    companyId: admin.companyId,
+    userId: admin.id,
+    action: "quote.resetTemplate",
+    targetType: "Quote",
+    targetId: quoteId,
+  });
+
+  revalidatePath(`/quotes/${quoteId}`);
 }

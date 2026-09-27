@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui";
@@ -52,6 +53,21 @@ export default async function SettingsPage({
         )}
         <div className="mt-3">
           <TeamSection members={members} currentUserId={user.id} />
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="font-semibold text-slate-900">見積の雛形</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          お客様提出用のExcel見積書を、御社が普段使っている書式そのままで出力できるようにします。
+        </p>
+        <div className="mt-3">
+          <Link
+            href="/settings/quote-templates"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            雛形の登録・編集へ
+          </Link>
         </div>
       </Card>
     </div>

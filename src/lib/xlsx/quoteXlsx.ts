@@ -28,6 +28,7 @@ export type QuoteXlsxItem = {
   quantity: number;
   unit: string;
   unitPrice: number;
+  remarks?: string | null; // 会社ごとの雛形出力(quoteTemplateXlsx.ts)でのみ使用。標準出力では未使用
 };
 
 export type QuoteXlsxInput = {

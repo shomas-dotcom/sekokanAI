@@ -12,6 +12,7 @@ import {
   addQuoteItemAction,
   updateQuoteItemAction,
   deleteQuoteItemAction,
+  resetQuoteTemplateAction,
 } from "../actions";
 import { Tabs } from "@/components/Tabs";
 import { EntityFileSection } from "@/components/entityFiles/EntityFileSection";
@@ -32,7 +33,7 @@ export default async function QuoteDetailPage({
   const { id } = await params;
   const user = await requireUser();
 
-  const [quote, files] = await Promise.all([
+  const [quote, files, availableTemplates] = await Promise.all([
     prisma.quote.findFirst({
       where: { id, companyId: user.companyId },
       include: {
@@ -41,14 +42,23 @@ export default async function QuoteDetailPage({
           orderBy: { sortOrder: "asc" },
           include: { rateMasterItem: { select: { name: true, updatedAt: true } } },
         },
+        templateVersion: { include: { template: true } },
       },
     }),
     prisma.entityFile.findMany({
       where: { entityType: "QUOTE", entityId: id, companyId: user.companyId },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.quoteTemplate.findMany({
+      where: { companyId: user.companyId, isActive: true },
+      include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+    }),
   ]);
   if (!quote) notFound();
+
+  const usableTemplates = availableTemplates
+    .map((t) => ({ template: t, version: t.versions[0] }))
+    .filter((t) => t.version && t.version.itemMaxRows > 0);
 
   const totals = computeQuoteTotals(quote.items, quote.taxRatePercent, quote.discountAmount);
   const profitability = computeQuoteProfitability(quote.items);
@@ -81,15 +91,42 @@ export default async function QuoteDetailPage({
           <Link href={`/quotes/${quote.id}/print`} className={secondaryButtonClass}>
             印刷 / PDF保存
           </Link>
-          <a href={`/quotes/${quote.id}/xlsx`} className={secondaryButtonClass}>
-            Excel出力
-          </a>
+          {quote.templateVersion ? (
+            <a href={`/quotes/${quote.id}/xlsx`} className={secondaryButtonClass}>
+              Excel出力({quote.templateVersion.template.name})
+            </a>
+          ) : usableTemplates.length > 0 ? (
+            <form action={`/quotes/${quote.id}/xlsx`} className="flex items-center gap-1">
+              <select name="templateVersionId" className={inputClass} defaultValue="">
+                <option value="">標準の書式</option>
+                {usableTemplates.map(({ template, version }) => (
+                  <option key={template.id} value={version.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+              <button className={secondaryButtonClass}>Excel出力</button>
+            </form>
+          ) : (
+            <a href={`/quotes/${quote.id}/xlsx`} className={secondaryButtonClass}>
+              Excel出力
+            </a>
+          )}
           <form action={duplicateQuoteAction}>
             <input type="hidden" name="id" value={quote.id} />
             <button className={secondaryButtonClass}>複製</button>
           </form>
         </div>
       </div>
+      {quote.templateVersion && user.role === "ADMIN" && (
+        <form action={resetQuoteTemplateAction} className="flex items-center gap-2 text-xs text-slate-500">
+          <input type="hidden" name="quoteId" value={quote.id} />
+          <span>
+            この見積は「{quote.templateVersion.template.name}」の書式に固定されています(発行後も内容が変わらないようにするためです)。
+          </span>
+          <button className="text-slate-500 underline hover:text-rose-600">書式の固定を解除する</button>
+        </form>
+      )}
 
       <Tabs
         tabs={[

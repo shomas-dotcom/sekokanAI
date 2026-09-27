@@ -85,6 +85,28 @@ export function validateAiDocumentFile(file: { type: string; size: number }): st
   return null;
 }
 
+// 会社ごとの見積・日報Excel雛形の登録用。マクロ有効ブック(.xlsm)は無効化しても中に
+// マクロが残るため許可しない。旧形式(.xls)は構造がまったく違いセル位置合わせの
+// 前提が崩れるため対象外(登録前に.xlsxで保存し直してもらう)。
+export const ALLOWED_XLSX_TEMPLATE_MIME_TYPES = [
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+];
+export const MAX_XLSX_TEMPLATE_BYTES = 10 * 1024 * 1024; // 10MB(通常の見積・日報ひな形を想定した上限)
+
+export function validateXlsxTemplateFile(file: { type: string; size: number; name: string }): string | null {
+  const lowerName = file.name.toLowerCase();
+  if (!lowerName.endsWith(".xlsx") || !ALLOWED_XLSX_TEMPLATE_MIME_TYPES.includes(file.type)) {
+    return "対応していないファイル形式です(Excelの.xlsx形式のみ登録できます。マクロ有効ブックや.xlsは対象外です)。";
+  }
+  if (file.size <= 0) {
+    return "ファイルが空です。";
+  }
+  if (file.size > MAX_XLSX_TEMPLATE_BYTES) {
+    return "ファイルサイズが大きすぎます(10MBまで)。";
+  }
+  return null;
+}
+
 // ブラウザの音声認識(SpeechRecognition)が使えない/失敗した場合の録音フォールバック用。
 // MediaRecorderが端末・ブラウザによって生成する形式が異なるため広めに許可する
 // (iPhone Safari: audio/mp4、Chrome/Android: audio/webm が主)。

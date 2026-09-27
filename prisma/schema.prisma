@@ -74,6 +74,7 @@ model Company {
   customers                 Customer[]
   projects                  Project[]
   quotes                    Quote[]
+  quoteTemplates            QuoteTemplate[]
   contracts                 Contract[]
   invoices                  Invoice[]
   dailyReports              DailyReport[]
@@ -535,27 +536,72 @@ enum QuoteStatus {
 }
 
 model Quote {
-  id               String      @id @default(cuid())
-  companyId        String
-  company          Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  projectId        String
-  project          Project     @relation(fields: [projectId], references: [id])
-  estimateNumber   String?     @unique // 見積番号(自動採番、既存データは後方互換のためnull許可)
-  title            String
-  status           QuoteStatus @default(DRAFT)
-  taxRatePercent   Int         @default(10)
-  discountAmount   Int         @default(0)
-  expirationDate   DateTime? // 見積有効期限
-  notes            String?
-  duplicatedFromId String? // 複製元見積のID
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  items            QuoteItem[]
-  contracts        Contract[]
-  priceHistoryRefs RateMasterPriceHistory[]
+  id                 String               @id @default(cuid())
+  companyId          String
+  company            Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  projectId          String
+  project            Project              @relation(fields: [projectId], references: [id])
+  estimateNumber     String?              @unique // 見積番号(自動採番、既存データは後方互換のためnull許可)
+  title              String
+  status             QuoteStatus          @default(DRAFT)
+  taxRatePercent     Int                  @default(10)
+  discountAmount     Int                  @default(0)
+  expirationDate     DateTime? // 見積有効期限
+  notes              String?
+  duplicatedFromId   String? // 複製元見積のID
+  // 会社の雛形で最初にExcel出力した時点のバージョンをここに固定する(凍結)。
+  // これ以降、雛形を編集しても既に発行したこの見積の出力内容は変わらない。nullなら標準の書式で出力する。
+  templateVersionId  String?
+  templateVersion    QuoteTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  items              QuoteItem[]
+  contracts          Contract[]
+  priceHistoryRefs   RateMasterPriceHistory[]
 
   @@index([companyId])
   @@index([projectId])
+  @@index([templateVersionId])
+}
+
+// 会社ごとに登録する見積のExcel雛形(元のファイルを保存し、出力時は指定したセルだけ書き込む)。
+model QuoteTemplate {
+  id              String                 @id @default(cuid())
+  companyId       String
+  company         Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String // 表示名(例: 標準の見積書、〇〇社指定様式)
+  isActive        Boolean                @default(true) // falseにすると新規の見積で選べなくなる(発行済みの見積には影響しない)
+  createdByUserId String
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  versions        QuoteTemplateVersion[]
+
+  @@index([companyId])
+}
+
+// 雛形の1回の登録・位置合わせ内容(ファイル+マッピング)。編集のたびに新しいバージョンを作り、
+// 過去のバージョンは書き換えない(すでに発行した見積が後から変わらないようにするため)。
+model QuoteTemplateVersion {
+  id              String        @id @default(cuid())
+  templateId      String
+  template        QuoteTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  versionNumber   Int
+  fileData        Bytes // 登録された元のExcelファイルそのもの
+  fileName        String
+  sheetName       String // 表紙(項目)を書き込むシート名
+  // JSON: { フィールドキー: "セル番地" }。無いキーには書き込まない(元のまま)。
+  fieldMappingJson String
+  itemSheetName   String // 明細を書き込むシート名(表紙と同じ場合も指定する)
+  itemStartRow    Int // 明細の書き込み開始行
+  itemMaxRows     Int // このシートが対応できる最大明細行数(超えたら出力時にエラーで知らせ、途中までの出力はしない)
+  // JSON: { itemName: "B", spec: "D", quantity: "E", unit: "F", unitPrice: "G", amount: "H"(省略可), remarks: "I" }
+  itemColumnsJson String
+  createdByUserId String
+  createdAt       DateTime      @default(now())
+  quotes          Quote[]
+
+  @@unique([templateId, versionNumber])
+  @@index([templateId])
 }
 
 // 単価の出所 — AIが単価を勝手に確定しないための区分(要件定義 REQUIREMENTS.md 参照)
