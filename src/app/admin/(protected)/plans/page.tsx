@@ -44,18 +44,34 @@ export default async function AdminPlansPage() {
                 説明(任意)
                 <Textarea name="description" rows={2} defaultValue={plan.description ?? ""} />
               </Label>
-              <Label>
-                AI利用回数の上限(1社・1か月あたり。空欄は無制限)
-                <Input
-                  name="aiRunLimit"
-                  type="number"
-                  min={0}
-                  step={1}
-                  placeholder="無制限"
-                  defaultValue={plan.aiRunLimit ?? ""}
-                  className="sm:w-48"
-                />
-              </Label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Label>
+                  AI利用回数の上限(1社・月。空欄は無制限)
+                  <Input
+                    name="aiRunLimit"
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="無制限"
+                    defaultValue={plan.aiRunLimit ?? ""}
+                  />
+                </Label>
+                <Label>
+                  利用者数の上限(1社。空欄は無制限)
+                  <Input name="userLimit" type="number" min={0} step={1} placeholder="無制限" defaultValue={plan.userLimit ?? ""} />
+                </Label>
+                <Label>
+                  保存容量の上限(MB・1社。空欄は無制限)
+                  <Input
+                    name="storageLimitMb"
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="無制限"
+                    defaultValue={plan.storageLimitMb ?? ""}
+                  />
+                </Label>
+              </div>
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" name="isActive" defaultChecked={plan.isActive} />
                 新規契約の選択肢に表示する

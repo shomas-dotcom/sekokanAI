@@ -48,6 +48,10 @@ export async function updatePlanAction(formData: FormData): Promise<void> {
       isActive: formData.get("isActive") === "on",
       // 上限は空欄なら無制限(null)。マイナス・小数・文字も無制限扱いにせず、そのまま保存しない。
       ...(formData.has("aiRunLimit") ? { aiRunLimit: parseLimit(String(formData.get("aiRunLimit") ?? "")) } : {}),
+      ...(formData.has("userLimit") ? { userLimit: parseLimit(String(formData.get("userLimit") ?? "")) } : {}),
+      ...(formData.has("storageLimitMb")
+        ? { storageLimitMb: parseLimit(String(formData.get("storageLimitMb") ?? "")) }
+        : {}),
     },
   });
   await logAdminAction(admin.id, `plan.update:${id}`);

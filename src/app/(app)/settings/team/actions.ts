@@ -6,6 +6,8 @@ import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { sendTeamInviteEmail } from "@/lib/verification";
+import { companyUserLimit, lockCompany } from "@/lib/companyLimits";
+import { isOverLimit } from "@/lib/aiUsageLimit";
 
 export type TeamFormState = { error?: string; success?: string } | undefined;
 
@@ -33,15 +35,31 @@ export async function inviteTeamMemberAction(
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return { error: "このメールアドレスは既に登録されています。" };
 
-  const member = await prisma.user.create({
-    data: {
-      companyId: admin.companyId,
-      email,
-      passwordHash: null,
-      name,
-      role,
-    },
+  // 利用者数の上限(F13)。同時に招待されても超えないよう、会社ごとの鍵をかけて数えてから作る。
+  const result = await prisma.$transaction(async (tx) => {
+    await lockCompany(tx, admin.companyId, "user-limit");
+    const limit = await companyUserLimit(tx, admin.companyId);
+    if (limit != null) {
+      const activeUsers = await tx.user.count({ where: { companyId: admin.companyId, deletedAt: null } });
+      if (isOverLimit(activeUsers, limit)) return { limitReached: limit } as const;
+    }
+    const created = await tx.user.create({
+      data: {
+        companyId: admin.companyId,
+        email,
+        passwordHash: null,
+        name,
+        role,
+      },
+    });
+    return { member: created } as const;
   });
+  if ("limitReached" in result) {
+    return {
+      error: `ご契約のプランで使える利用者数の上限(${result.limitReached}人)に達しているため、招待できません。使っていない利用者を削除するか、運営までご相談ください。`,
+    };
+  }
+  const member = result.member;
 
   try {
     await sendTeamInviteEmail(member.id, member.email, admin.company.name, admin.name);

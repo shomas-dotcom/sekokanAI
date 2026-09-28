@@ -11,6 +11,7 @@ import { advanceProjectStatus } from "@/lib/projectStatus";
 import { defaultQuoteExpirationDate } from "@/lib/rateMaster";
 import { validateDocumentFile } from "@/lib/fileValidation";
 import { prepareImageForStorage } from "@/lib/imageConversion";
+import { checkStorageForUpload } from "@/lib/companyLimits";
 import type { PriceSource, RateCategory } from "@/generated/prisma/enums";
 
 const RATE_CATEGORIES: RateCategory[] = [
@@ -54,6 +55,14 @@ export async function createQuoteAction(
   for (const file of attachedFiles) {
     const validationError = validateDocumentFile(file);
     if (validationError) return { error: `${file.name}: ${validationError}` };
+  }
+  // 保存容量の上限(F13)。見積だけ作られて添付が保存されない、を避けるため作成より前に確かめる。
+  if (attachedFiles.length > 0) {
+    const storageError = await checkStorageForUpload(
+      user.companyId,
+      attachedFiles.reduce((sum, f) => sum + f.size, 0)
+    );
+    if (storageError) return { error: storageError };
   }
 
   const project = await prisma.project.findFirst({

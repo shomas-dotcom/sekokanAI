@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { validateDocumentFile } from "@/lib/fileValidation";
 import { prepareImageForStorage } from "@/lib/imageConversion";
+import { checkStorageForUpload } from "@/lib/companyLimits";
 
 export type ProjectFileFormState = { error?: string } | undefined;
 
@@ -34,6 +35,13 @@ export async function uploadProjectFileAction(
       return { error: `${file.name}: ${validationError}` };
     }
   }
+
+  // 保存容量の上限(F13)。1件目だけ保存されて途中で止まらないよう、全件の合計で先に確かめる。
+  const storageError = await checkStorageForUpload(
+    user.companyId,
+    files.reduce((sum, f) => sum + f.size, 0)
+  );
+  if (storageError) return { error: storageError };
 
   for (const file of files) {
     // HEIC/HEIFはiPhone以外の端末(Android・Windows等)のブラウザで表示できないことが

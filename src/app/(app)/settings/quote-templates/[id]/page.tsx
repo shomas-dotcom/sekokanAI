@@ -6,8 +6,15 @@ import { Card, Badge, Button } from "@/components/ui";
 import { ActiveToggleButton } from "../ActiveToggleButton";
 import { addQuoteTemplateVersionAction } from "../actions";
 
-export default async function QuoteTemplateDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function QuoteTemplateDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { id } = await params;
+  const { error } = await searchParams;
   const admin = await requireAdmin();
   const template = await prisma.quoteTemplate.findFirst({
     where: { id, companyId: admin.companyId },
@@ -30,6 +37,12 @@ export default async function QuoteTemplateDetailPage({ params }: { params: Prom
         </div>
         <ActiveToggleButton templateId={template.id} isActive={template.isActive} />
       </div>
+
+      {error === "storage" && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          ⚠ 保存容量の上限を超えるため、ファイルを差し替えられませんでした。不要な写真・ファイルを削除するか、運営までご相談ください。
+        </p>
+      )}
 
       {latest && (
         <Card>

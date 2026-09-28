@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { validateDocumentFile } from "@/lib/fileValidation";
 import { prepareImageForStorage } from "@/lib/imageConversion";
+import { checkStorageForUpload } from "@/lib/companyLimits";
 import type { FileEntityType } from "@/generated/prisma/enums";
 
 export type EntityFileFormState = { error?: string } | undefined;
@@ -70,6 +71,13 @@ export async function uploadEntityFileAction(
     const validationError = validateDocumentFile(file);
     if (validationError) return { error: `${file.name}: ${validationError}` };
   }
+
+  // 保存容量の上限(F13)。途中まで保存されて止まらないよう、全件の合計で先に確かめる。
+  const storageError = await checkStorageForUpload(
+    user.companyId,
+    files.reduce((sum, f) => sum + f.size, 0)
+  );
+  if (storageError) return { error: storageError };
 
   for (const file of files) {
     // HEIC/HEIFはiPhone以外の端末(Android・Windows等)のブラウザで表示できないことが

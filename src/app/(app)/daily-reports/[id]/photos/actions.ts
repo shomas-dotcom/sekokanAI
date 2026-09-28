@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { validateImageFile, validateVisionImageFile } from "@/lib/fileValidation";
 import { prepareImageForVision, prepareImageForStorage } from "@/lib/imageConversion";
+import { checkStorageForUpload } from "@/lib/companyLimits";
 import { suggestPhotoMetadataFromImage, type PhotoMetadataExtraction } from "@/lib/ai";
 
 export type PhotoFormState = { error?: string } | undefined;
@@ -93,6 +94,9 @@ export async function uploadPhotoAction(
     file.type,
     file.name
   );
+  // 保存容量の上限(F13)。変換後の実際に保存する大きさで確かめる。
+  const storageError = await checkStorageForUpload(user.companyId, buffer.length);
+  if (storageError) return { error: storageError };
 
   // EXIFのDateTimeOriginalはクライアント側(exifr)で抽出し、hidden inputで渡す。
   // 取得できなければ「撮影日時不明」(null)として保存する。アップロード時刻で埋めると、

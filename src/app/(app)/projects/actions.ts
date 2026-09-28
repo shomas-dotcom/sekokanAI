@@ -8,6 +8,7 @@ import { logAction } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/numbering";
 import { validateAiDocumentFile, validateDocumentFile } from "@/lib/fileValidation";
 import { prepareImageForVision, prepareImageForStorage } from "@/lib/imageConversion";
+import { checkStorageForUpload } from "@/lib/companyLimits";
 import {
   extractProjectRequestFromText,
   extractProjectRequestFromImage,
@@ -98,6 +99,14 @@ export async function createProjectAction(
   for (const file of attachedFiles) {
     const validationError = validateDocumentFile(file);
     if (validationError) return { error: `${file.name}: ${validationError}` };
+  }
+  // 保存容量の上限(F13)。案件だけ作られて添付が保存されない、を避けるため案件作成より前に確かめる。
+  if (attachedFiles.length > 0) {
+    const storageError = await checkStorageForUpload(
+      user.companyId,
+      attachedFiles.reduce((sum, f) => sum + f.size, 0)
+    );
+    if (storageError) return { error: storageError };
   }
 
   const customer = await prisma.customer.findFirst({

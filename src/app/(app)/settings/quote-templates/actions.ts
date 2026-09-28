@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { validateXlsxTemplateFile } from "@/lib/fileValidation";
+import { checkStorageForUpload } from "@/lib/companyLimits";
 import { listWorkbookSheets } from "@/lib/xlsx/sheetPreview";
 import {
   QUOTE_TEMPLATE_FIELD_KEYS,
@@ -43,6 +44,10 @@ export async function createQuoteTemplateAction(
     return { error: "Excelファイルを読み取れませんでした。ファイルが壊れていないか確認してください。" };
   }
   if (sheets.length === 0) return { error: "シートが1つも見つかりませんでした。" };
+
+  // 保存容量の上限(F13)
+  const storageError = await checkStorageForUpload(admin.companyId, buffer.length);
+  if (storageError) return { error: storageError };
 
   const template = await prisma.quoteTemplate.create({
     data: { companyId: admin.companyId, name, createdByUserId: admin.id },
@@ -104,6 +109,10 @@ export async function addQuoteTemplateVersionAction(formData: FormData) {
   if (sheets.length === 0) {
     revalidatePath(`/settings/quote-templates/${templateId}`);
     return;
+  }
+  // 保存容量の上限(F13)。黙って何もしないと理由が分からないため、画面に理由を出す。
+  if (await checkStorageForUpload(admin.companyId, buffer.length)) {
+    redirect(`/settings/quote-templates/${templateId}?error=storage`);
   }
 
   const latest = await prisma.quoteTemplateVersion.findFirst({
