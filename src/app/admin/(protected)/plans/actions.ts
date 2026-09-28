@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requirePlatformAdmin } from "@/lib/platformAdminAuth";
 import { prisma } from "@/lib/prisma";
+import { parseLimit } from "@/lib/aiUsageLimit";
 
 function toInt(value: FormDataEntryValue | null, fallback = 0): number {
   const n = Number(value);
@@ -45,6 +46,8 @@ export async function updatePlanAction(formData: FormData): Promise<void> {
       setupFee: toInt(formData.get("setupFee")),
       description: String(formData.get("description") ?? "").trim() || null,
       isActive: formData.get("isActive") === "on",
+      // 上限は空欄なら無制限(null)。マイナス・小数・文字も無制限扱いにせず、そのまま保存しない。
+      ...(formData.has("aiRunLimit") ? { aiRunLimit: parseLimit(String(formData.get("aiRunLimit") ?? "")) } : {}),
     },
   });
   await logAdminAction(admin.id, `plan.update:${id}`);

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui";
 import { isExpired, isExpiringSoon } from "@/lib/qualifications";
 import { AiIntakeWidget } from "../ai-inbox/AiIntakeWidget";
+import { getCompanyAiUsage } from "@/lib/aiUsageLog";
 
 const AI_DOCUMENT_TYPE_LABEL: Record<string, string> = {
   BUSINESS_CARD: "名刺",
@@ -142,6 +143,15 @@ export default async function DashboardPage() {
       : null;
   const monthlyBillableAmount = monthlyBillableAgg?._sum.amount ?? 0;
 
+  // AI利用回数の上限(F13)。上限に近づいた時だけ知らせる(普段は数字を増やさない方針のため)。
+  const aiUsage = await getCompanyAiUsage(companyId);
+  const aiUsageWarning =
+    aiUsage.limit != null && aiUsage.used >= Math.floor(aiUsage.limit * 0.8)
+      ? aiUsage.used >= aiUsage.limit
+        ? `今月のAI利用回数が上限(${aiUsage.limit}回)に達しました。AIを使う機能は、来月まで簡易判定で動くか、手入力になります。`
+        : `今月のAI利用回数が上限に近づいています(${aiUsage.used} / ${aiUsage.limit}回)。`
+      : null;
+
   // 「見て困らない数字」は絞る。ここに残すのは「今なにか対応が必要か」が
   // 一目でわかる4つだけにする(それ以外は各一覧画面で見られる)。
   const cards = [
@@ -162,6 +172,12 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">ダッシュボード</h1>
         <p className="mt-1 text-sm text-slate-500">{user.company.name} の概況</p>
       </div>
+
+      {aiUsageWarning && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          ⚠ {aiUsageWarning}
+        </p>
+      )}
 
       {/* ① AIかんたん登録 */}
       <AiIntakeWidget />

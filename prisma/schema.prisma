@@ -1201,6 +1201,10 @@ model AiUsageLog {
   outputTokens Int?
   success      Boolean
   errorMessage String?
+  // 利用回数の上限を守るため、AIを呼ぶ前に1回分を「予約(RESERVED)」として記録し、
+  // 呼び出しが終わったら結果を書いて「完了(DONE)」にする(調査報告F13)。
+  // 同時に何人が押しても上限を超えないようにするための仕組み。既存の行はすべてDONE。
+  status       String   @default("DONE")
   createdAt    DateTime @default(now())
 
   @@index([companyId])

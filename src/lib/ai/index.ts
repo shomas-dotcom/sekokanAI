@@ -2,7 +2,7 @@
 // 特定ベンダーへの依存を避けるため、呼び出し側はこのモジュールの関数のみを利用する。
 
 import { normalizeExtractedText } from "@/lib/textNormalize";
-import { recordAiUsage, type AiUsageContext } from "@/lib/aiUsageLog";
+import { finishAiRun, recordAiUsage, reserveAiRun, type AiUsageContext } from "@/lib/aiUsageLog";
 
 export type RateMasterCandidate = {
   id: string;
@@ -38,6 +38,8 @@ async function callAnthropic(
 ): Promise<string> {
   const apiKey = process.env.AI_API_KEY;
   if (!apiKey) throw new Error("AI_API_KEY is not set");
+  // 今月の利用回数の上限に達していればここで止まる(AIは呼ばない・費用は発生しない)。
+  const reservationId = await reserveAiRun(usageContext, ANTHROPIC_MODEL);
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -68,7 +70,7 @@ async function callAnthropic(
     const text = data.content?.[0]?.text;
     if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
 
-    await recordAiUsage(usageContext, {
+    await finishAiRun(reservationId, usageContext, {
       model: ANTHROPIC_MODEL,
       success: true,
       inputTokens: data.usage?.input_tokens ?? null,
@@ -76,7 +78,7 @@ async function callAnthropic(
     });
     return text;
   } catch (err) {
-    await recordAiUsage(usageContext, {
+    await finishAiRun(reservationId, usageContext, {
       model: ANTHROPIC_MODEL,
       success: false,
       errorMessage: err instanceof Error ? err.message : String(err),
@@ -98,6 +100,8 @@ async function callAnthropicVision(
 ): Promise<string> {
   const apiKey = process.env.AI_API_KEY;
   if (!apiKey) throw new Error("AI_API_KEY is not set");
+  // 今月の利用回数の上限に達していればここで止まる(AIは呼ばない・費用は発生しない)。
+  const reservationId = await reserveAiRun(usageContext, ANTHROPIC_MODEL);
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -136,7 +140,7 @@ async function callAnthropicVision(
     const text = data.content?.[0]?.text;
     if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
 
-    await recordAiUsage(usageContext, {
+    await finishAiRun(reservationId, usageContext, {
       model: ANTHROPIC_MODEL,
       success: true,
       inputTokens: data.usage?.input_tokens ?? null,
@@ -144,7 +148,7 @@ async function callAnthropicVision(
     });
     return text;
   } catch (err) {
-    await recordAiUsage(usageContext, {
+    await finishAiRun(reservationId, usageContext, {
       model: ANTHROPIC_MODEL,
       success: false,
       errorMessage: err instanceof Error ? err.message : String(err),
@@ -164,6 +168,8 @@ async function callAnthropicDocument(
 ): Promise<string> {
   const apiKey = process.env.AI_API_KEY;
   if (!apiKey) throw new Error("AI_API_KEY is not set");
+  // 今月の利用回数の上限に達していればここで止まる(AIは呼ばない・費用は発生しない)。
+  const reservationId = await reserveAiRun(usageContext, ANTHROPIC_MODEL);
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -202,7 +208,7 @@ async function callAnthropicDocument(
     const text = data.content?.[0]?.text;
     if (typeof text !== "string") throw new Error("Unexpected Anthropic response shape");
 
-    await recordAiUsage(usageContext, {
+    await finishAiRun(reservationId, usageContext, {
       model: ANTHROPIC_MODEL,
       success: true,
       inputTokens: data.usage?.input_tokens ?? null,
@@ -210,7 +216,7 @@ async function callAnthropicDocument(
     });
     return text;
   } catch (err) {
-    await recordAiUsage(usageContext, {
+    await finishAiRun(reservationId, usageContext, {
       model: ANTHROPIC_MODEL,
       success: false,
       errorMessage: err instanceof Error ? err.message : String(err),
