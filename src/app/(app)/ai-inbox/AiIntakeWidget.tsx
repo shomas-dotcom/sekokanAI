@@ -4,15 +4,13 @@ import { useActionState, useRef } from "react";
 import { submitAiIntakeAction, type AiIntakeSubmitState } from "./actions";
 
 /**
- * ダッシュボード最上部の「AIかんたん登録」。写真・書類(名刺・見積書・PDF等)を
+ * 「AIかんたん登録」の撮影/ファイルボタン。写真・書類(名刺・見積書・PDF等)を
  * 撮影/添付すると、内容の判定・仕分けはAIに任せる(顧客登録・案件登録・
  * 見積作成のどれかを最初に選ばせない)。解析結果はDBに直接確定せず、
  * 一度 /ai-inbox/[id] の確認画面に遷移してから登録する。
  *
- * 話す・書くだけで登録したい場合は、ダッシュボードの「AIに話す」を使う
- * (2026-09: 従来ここにあった「文面」「音声」ボタンは、より多くの種類
- * (日報・KY・見積・請求等)を判定できる「AIに話す」に一本化し、この
- * ウィジェットは写真・書類の読み取りに絞ってシンプルにした)。
+ * 見た目のカード枠は持たず、呼び出し側(ダッシュボードのAIヒーロー領域)に
+ * 埋め込んで使う想定(2026-09: 「AIに話す」ボタンと同じ枠にまとめて目立たせた)。
  */
 export function AiIntakeWidget() {
   const [state, formAction, pending] = useActionState<AiIntakeSubmitState, FormData>(
@@ -32,51 +30,46 @@ export function AiIntakeWidget() {
   }
 
   return (
-    <div className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-violet-50 p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-slate-900">AIかんたん登録</h2>
-      <p className="mt-1 text-sm text-slate-600">名刺・見積書・PDF等を撮影/添付すると、AIが自動入力します</p>
+    <form ref={formRef} action={formAction} className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => cameraInputRef.current?.click()}
+          className="flex flex-col items-center gap-1 rounded-2xl bg-white/15 p-4 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/25"
+        >
+          <span className="text-2xl">📷</span>撮影
+        </button>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex flex-col items-center gap-1 rounded-2xl bg-white/15 p-4 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/25"
+        >
+          <span className="text-2xl">📎</span>ファイル
+        </button>
+      </div>
 
-      <form ref={formRef} action={formAction} className="mt-4 flex flex-col gap-3">
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => cameraInputRef.current?.click()}
-            className="flex flex-col items-center gap-1 rounded-2xl bg-white p-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-          >
-            <span className="text-3xl">📷</span>撮影
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-1 rounded-2xl bg-white p-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-          >
-            <span className="text-3xl">📎</span>ファイル
-          </button>
-        </div>
+      <input
+        ref={cameraInputRef}
+        type="file"
+        name="cameraFile"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => submitFile(e.target)}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        name="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
+        className="hidden"
+        onChange={(e) => submitFile(e.target)}
+      />
 
-        <input
-          ref={cameraInputRef}
-          type="file"
-          name="cameraFile"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => submitFile(e.target)}
-        />
-        <input
-          ref={fileInputRef}
-          type="file"
-          name="file"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
-          className="hidden"
-          onChange={(e) => submitFile(e.target)}
-        />
-
-        {pending && <p className="text-sm text-indigo-700">AIが判定しています...</p>}
-        {state?.error && (
-          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
-        )}
-      </form>
-    </div>
+      {pending && <p className="text-sm text-white/90">AIが判定しています...</p>}
+      {state?.error && (
+        <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
+      )}
+    </form>
   );
 }

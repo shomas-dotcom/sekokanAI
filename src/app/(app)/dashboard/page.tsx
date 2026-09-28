@@ -155,22 +155,20 @@ export default async function DashboardPage() {
   // 「見て困らない数字」は絞る。ここに残すのは「今なにか対応が必要か」が
   // 一目でわかる4つだけにする(それ以外は各一覧画面で見られる)。
   const cards = [
-    {
-      label: "施工中の案件",
-      value: activeProjectCount,
-      href: "/projects",
-      accent: "from-amber-500 to-orange-500",
-    },
-    { label: "見積中", value: estimatingProjectCount, href: "/quotes", accent: "from-violet-500 to-purple-500" },
-    { label: "未請求の契約", value: unbilledContractCount, href: "/contracts", accent: "from-rose-500 to-pink-500" },
-    { label: "入金待ちの請求書", value: issuedInvoiceCount, href: "/invoices", accent: "from-cyan-500 to-sky-500" },
+    { label: "施工中の案件", value: activeProjectCount, href: "/projects", dot: "bg-amber-500" },
+    { label: "見積中", value: estimatingProjectCount, href: "/quotes", dot: "bg-violet-500" },
+    { label: "未請求の契約", value: unbilledContractCount, href: "/contracts", dot: "bg-rose-500" },
+    { label: "入金待ちの請求書", value: issuedInvoiceCount, href: "/invoices", dot: "bg-sky-500" },
   ];
+
+  const hour = now.getHours();
+  const greeting = hour < 5 ? "お疲れ様です" : hour < 11 ? "おはようございます" : hour < 18 ? "こんにちは" : "お疲れ様です";
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">ダッシュボード</h1>
-        <p className="mt-1 text-sm text-slate-500">{user.company.name} の概況</p>
+        <p className="text-sm text-slate-500">{greeting}、{user.name}さん</p>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">{user.company.name}</h1>
       </div>
 
       {aiUsageWarning && (
@@ -179,10 +177,22 @@ export default async function DashboardPage() {
         </p>
       )}
 
-      {/* ① AIかんたん登録 */}
-      <AiIntakeWidget />
+      {/* AIヒーロー領域: 音声入力とかんたん登録を1か所にまとめ、ここだけ色を効かせて目立たせる */}
+      <div className="rounded-3xl bg-gradient-to-br from-indigo-600 to-violet-600 p-5 shadow-lg shadow-indigo-600/25">
+        <Link
+          href="/voice-entry"
+          className="flex items-center justify-center gap-3 rounded-2xl bg-white/15 px-6 py-5 text-xl font-bold text-white backdrop-blur-sm transition hover:bg-white/25"
+        >
+          <span className="text-3xl">🎤</span>
+          AIに話す
+        </Link>
+        <p className="mt-4 text-sm font-medium text-white/80">写真・書類でかんたん登録</p>
+        <div className="mt-2">
+          <AiIntakeWidget />
+        </div>
+      </div>
 
-      {/* ② AI確認待ち */}
+      {/* AI確認待ち */}
       {pendingAiExtractions.length > 0 && (
         <div>
           <h2 className="mb-2 text-sm font-semibold text-slate-500">
@@ -193,27 +203,18 @@ export default async function DashboardPage() {
               <Link
                 key={ex.id}
                 href={`/ai-inbox/${ex.id}`}
-                className="flex items-center justify-between rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50"
               >
-                <span className="text-indigo-800">
+                <span className="text-slate-700">
                   {ex.status === "FAILED" ? "⚠ 解析に失敗しました" : `${AI_DOCUMENT_TYPE_LABEL[ex.documentType]}を解析しました`}
-                  {ex.sourceSummary && <span className="ml-2 text-xs text-indigo-500">({ex.sourceSummary})</span>}
+                  {ex.sourceSummary && <span className="ml-2 text-xs text-slate-400">({ex.sourceSummary})</span>}
                 </span>
-                <span className="font-medium text-indigo-700 underline">確認する</span>
+                <span className="font-medium text-indigo-700">確認する →</span>
               </Link>
             ))}
           </div>
         </div>
       )}
-
-      {/* ③ 今日の現場 */}
-      <Link
-        href="/voice-entry"
-        className="flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 px-6 py-5 text-xl font-bold text-white shadow-lg shadow-indigo-600/30 transition hover:scale-[1.01]"
-      >
-        <span className="text-3xl">🎤</span>
-        AIに話す
-      </Link>
 
       <div>
         <h2 className="mb-2 text-sm font-semibold text-slate-500">今日の現場</h2>
@@ -230,13 +231,13 @@ export default async function DashboardPage() {
               <Link
                 key={project.id}
                 href={`/projects/${project.id}`}
-                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 transition hover:border-slate-300"
               >
                 <div>
                   <p className="text-xs text-slate-500">{project.customer.name}</p>
                   <p className="font-bold text-slate-900">{project.name}</p>
                 </div>
-                <span className="text-sm font-medium text-orange-700 underline">現場を開く</span>
+                <span className="text-sm font-medium text-orange-700">開く →</span>
               </Link>
             ))}
           </div>
@@ -285,7 +286,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {/* ⑤ 経営数字 */}
+      {/* 経営数字 */}
       <div>
         <h2 className="mb-2 text-sm font-semibold text-slate-500">経営数字</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -293,25 +294,23 @@ export default async function DashboardPage() {
             <Link
               key={card.label}
               href={card.href}
-              className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50 transition hover:-translate-y-0.5 hover:shadow-md"
+              className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300"
             >
-              <div
-                className={`absolute -right-4 -top-4 h-16 w-16 rounded-full bg-gradient-to-br ${card.accent} opacity-15 blur-xl transition group-hover:opacity-25`}
-              />
-              <p className="text-2xl font-bold text-slate-900">{card.value}</p>
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${card.dot}`} />
+              <p className="mt-2 text-2xl font-bold text-slate-900">{card.value}</p>
               <p className="mt-1 text-sm text-slate-500">{card.label}</p>
             </Link>
           ))}
         </div>
 
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
-          <Card className="bg-gradient-to-br from-amber-50 to-orange-50">
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Card className="border-slate-200">
             <p className="text-sm text-slate-500">今月の請求金額(発行済み)</p>
             <p className="mt-1 text-3xl font-bold text-slate-900">
               {monthlyBilledAmount.toLocaleString("ja-JP")}円
             </p>
           </Card>
-          <Card className="bg-gradient-to-br from-lime-50 to-emerald-50">
+          <Card className="border-slate-200">
             <p className="text-sm text-slate-500">
               今月の残業時間合計({useAttendanceForOvertime ? "勤怠集計" : "日報集計"})
             </p>
@@ -322,21 +321,21 @@ export default async function DashboardPage() {
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Link
             href="/attendance-management"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300"
           >
             <p className="text-2xl font-bold text-slate-900">{todayAttendanceCount}</p>
             <p className="mt-1 text-sm text-slate-500">今日の出勤人数</p>
           </Link>
           <Link
             href="/attendance-management"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300"
           >
             <p className="text-2xl font-bold text-slate-900">{unapprovedAttendanceCount}</p>
             <p className="mt-1 text-sm text-slate-500">未承認の勤怠</p>
           </Link>
           <Link
             href="/site-attendance"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300"
           >
             <p className="text-2xl font-bold text-slate-900">{monthlyManDays}</p>
             <p className="mt-1 text-sm text-slate-500">今月の総人工</p>
@@ -344,7 +343,7 @@ export default async function DashboardPage() {
           {user.role === "ADMIN" && (
             <Link
               href="/site-attendance"
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300"
             >
               <p className="text-2xl font-bold text-slate-900">{monthlyBillableAmount.toLocaleString("ja-JP")}円</p>
               <p className="mt-1 text-sm text-slate-500">今月の常用請求予定額</p>
