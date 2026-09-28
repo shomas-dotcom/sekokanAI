@@ -7,6 +7,7 @@ import {
   deleteDailyReportAction,
   addDailyReportWorkerAction,
   deleteDailyReportWorkerAction,
+  resetDailyReportTemplateAction,
 } from "../actions";
 import { Card, Input, Textarea, Select, Button, FieldLabel } from "@/components/ui";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
@@ -28,7 +29,7 @@ export default async function DailyReportDetailPage({
   const { id } = await params;
   const user = await requireUser();
 
-  const [report, employees] = await Promise.all([
+  const [report, employees, availableTemplates] = await Promise.all([
     prisma.dailyReport.findFirst({
       where: { id, companyId: user.companyId },
       include: {
@@ -41,11 +42,20 @@ export default async function DailyReportDetailPage({
             siteAttendance: { select: { status: true } },
           },
         },
+        templateVersion: { include: { template: true } },
       },
     }),
     prisma.employee.findMany({ where: { companyId: user.companyId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.dailyReportTemplate.findMany({
+      where: { companyId: user.companyId, isActive: true },
+      include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+    }),
   ]);
   if (!report) notFound();
+
+  const usableTemplates = availableTemplates
+    .map((t) => ({ template: t, version: t.versions[0] }))
+    .filter((t) => t.version && t.version.workerMaxRows > 0);
 
   // 現場責任者は担当現場の日報だけ閲覧できる(管理者・一般社員の既存の見え方は変えない)。
   if (user.role === "SITE_MANAGER") {
@@ -96,8 +106,43 @@ export default async function DailyReportDetailPage({
               日本道路指定様式
             </Link>
           )}
+          {report.templateVersion ? (
+            <a
+              href={`/daily-reports/${report.id}/xlsx`}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Excel出力({report.templateVersion.template.name})
+            </a>
+          ) : usableTemplates.length > 0 ? (
+            <form action={`/daily-reports/${report.id}/xlsx`} className="flex items-center gap-1">
+              <select
+                name="templateVersionId"
+                defaultValue=""
+                className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600"
+              >
+                <option value="">書式を選ぶ</option>
+                {usableTemplates.map(({ template, version }) => (
+                  <option key={template.id} value={version.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+              <button className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                Excel出力
+              </button>
+            </form>
+          ) : null}
         </div>
       </div>
+      {report.templateVersion && user.role === "ADMIN" && (
+        <form action={resetDailyReportTemplateAction} className="flex items-center gap-2 text-xs text-slate-500">
+          <input type="hidden" name="dailyReportId" value={report.id} />
+          <span>
+            この日報は「{report.templateVersion.template.name}」の書式に固定されています(発行後も内容が変わらないようにするためです)。
+          </span>
+          <button className="text-slate-500 underline hover:text-rose-600">書式の固定を解除する</button>
+        </form>
+      )}
 
       {unclearItems.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">

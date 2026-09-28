@@ -70,6 +70,21 @@ export default async function SettingsPage({
           </Link>
         </div>
       </Card>
+
+      <Card>
+        <h2 className="font-semibold text-slate-900">日報の雛形</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          元請などへ提出しているExcel日報を、御社が普段使っている書式そのままで出力できるようにします。
+        </p>
+        <div className="mt-3">
+          <Link
+            href="/settings/daily-report-templates"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            雛形の登録・編集へ
+          </Link>
+        </div>
+      </Card>
     </div>
   );
 }

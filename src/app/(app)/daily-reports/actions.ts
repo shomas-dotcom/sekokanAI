@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
+import { requireUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { draftDailyReportFromText } from "@/lib/ai";
@@ -501,4 +501,27 @@ async function reflectDailyReportWorker(
   }
 
   return audit;
+}
+
+/**
+ * 日報に固定した会社雛形バージョンを解除する(選び間違えたときの救済用)。見積のresetQuoteTemplateActionと同じ考え方。
+ */
+export async function resetDailyReportTemplateAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const dailyReportId = String(formData.get("dailyReportId") ?? "");
+
+  await prisma.dailyReport.updateMany({
+    where: { id: dailyReportId, companyId: admin.companyId },
+    data: { templateVersionId: null },
+  });
+
+  await logAction({
+    companyId: admin.companyId,
+    userId: admin.id,
+    action: "dailyReport.resetTemplate",
+    targetType: "DailyReport",
+    targetId: dailyReportId,
+  });
+
+  revalidatePath(`/daily-reports/${dailyReportId}`);
 }

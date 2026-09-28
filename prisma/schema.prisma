@@ -75,6 +75,7 @@ model Company {
   projects                  Project[]
   quotes                    Quote[]
   quoteTemplates            QuoteTemplate[]
+  dailyReportTemplates      DailyReportTemplate[]
   contracts                 Contract[]
   invoices                  Invoice[]
   dailyReports              DailyReport[]
@@ -604,6 +605,44 @@ model QuoteTemplateVersion {
   @@index([templateId])
 }
 
+// 会社ごとに登録する日報のExcel雛形。考え方・作りはQuoteTemplate/QuoteTemplateVersionと同じ
+// (元のファイルを保存し、出力時は指定したセルだけ書き込む。編集のたびに新バージョンを作る)。
+model DailyReportTemplate {
+  id              String                      @id @default(cuid())
+  companyId       String
+  company         Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String
+  isActive        Boolean                     @default(true)
+  createdByUserId String
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  versions        DailyReportTemplateVersion[]
+
+  @@index([companyId])
+}
+
+model DailyReportTemplateVersion {
+  id               String              @id @default(cuid())
+  templateId       String
+  template         DailyReportTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  versionNumber    Int
+  fileData         Bytes
+  fileName         String
+  sheetName        String // 表紙(基本情報)を書き込むシート名
+  fieldMappingJson String // JSON: { フィールドキー: "セル番地" }
+  workerSheetName  String // 作業員一覧を書き込むシート名(表紙と同じ場合も指定する)
+  workerStartRow   Int // 作業員一覧の書き込み開始行
+  workerMaxRows    Int // 対応できる最大人数(超えたら出力時にエラーで知らせ、途中までの出力はしない)
+  // JSON: { workerName: "B", role: "C", startTime: "D", endTime: "E", workDescription: "F", manDays: "G" }
+  workerColumnsJson String
+  createdByUserId  String
+  createdAt        DateTime            @default(now())
+  dailyReports     DailyReport[]
+
+  @@unique([templateId, versionNumber])
+  @@index([templateId])
+}
+
 // 単価の出所 — AIが単価を勝手に確定しないための区分(要件定義 REQUIREMENTS.md 参照)
 enum PriceSource {
   COMPANY_RATE // 会社登録単価
@@ -642,6 +681,9 @@ model DailyReport {
   company          Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   projectId        String
   project          Project  @relation(fields: [projectId], references: [id])
+  // 会社の雛形で最初にExcel出力した時点のバージョンをここに固定する(凍結)。見積のQuote.templateVersionIdと同じ考え方。
+  templateVersionId String?
+  templateVersion   DailyReportTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
   reportDate       DateTime
   weather          String?
   workerCount      Int?
@@ -692,6 +734,7 @@ model DailyReport {
 
   @@index([companyId])
   @@index([projectId])
+  @@index([templateVersionId])
 }
 
 enum PhotoPhase {
