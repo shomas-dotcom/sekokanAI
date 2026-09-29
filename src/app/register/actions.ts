@@ -6,6 +6,7 @@ import { hash } from "@/lib/password";
 import { createSession } from "@/lib/session";
 import { logAction } from "@/lib/audit";
 import { sendVerificationEmail } from "@/lib/verification";
+import { tryEnrollMonitor, MONITOR_STATUS_MESSAGE } from "@/lib/monitor";
 
 export type RegisterState = { error?: string } | undefined;
 
@@ -39,11 +40,21 @@ export async function registerAction(
 
   const passwordHash = await hash(password);
 
-  const { company, user } = await prisma.$transaction(async (tx) => {
+  // 公開前修正①: 現在は「30社限定・登録から6か月無料」のモニター受付のみを行っている。
+  // 枠の確認・会社作成・利用者作成を同じトランザクションでまとめ、途中で失敗した場合に
+  // 枠だけ消費された状態を残さない。同時登録が重なっても枠を超えないよう、
+  // tryEnrollMonitor内でアドバイザリーロックにより直列化して数える。
+  const result = await prisma.$transaction(async (tx) => {
+    const enrollment = await tryEnrollMonitor(tx);
+    if (!enrollment.ok) return { ok: false as const, status: enrollment.status };
+
     const company = await tx.company.create({
       data: {
         name: companyName,
         representativeName: representativeName || null,
+        isMonitor: true,
+        monitorEnrolledAt: enrollment.enrolledAt,
+        monitorFreeMonths: enrollment.freeMonths,
       },
     });
     const user = await tx.user.create({
@@ -55,8 +66,14 @@ export async function registerAction(
         role: "ADMIN",
       },
     });
-    return { company, user };
+    return { ok: true as const, company, user };
   });
+
+  if (!result.ok) {
+    const messageFn = MONITOR_STATUS_MESSAGE[result.status.status];
+    return { error: messageFn ? messageFn(result.status) : "現在、新規登録を受け付けておりません。" };
+  }
+  const { company, user } = result;
 
   await logAction({
     companyId: company.id,

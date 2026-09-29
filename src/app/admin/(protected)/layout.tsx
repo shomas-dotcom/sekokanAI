@@ -22,6 +22,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <Link href="/admin/plans" className="hover:text-white">
                 料金プラン
               </Link>
+              <Link href="/admin/monitor" className="hover:text-white">
+                モニター募集
+              </Link>
               <Link href="/admin/products" className="hover:text-white">
                 商品管理
               </Link>

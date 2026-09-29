@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { isPremium } from "@/lib/premium";
+import { canCreateQuotes } from "@/lib/monitor";
 import { prisma } from "@/lib/prisma";
 import { NewQuoteForm } from "./NewQuoteForm";
 import { Card } from "@/components/ui";
@@ -14,7 +14,7 @@ export default async function NewQuotePage({
   const { prefillTranscript } = await searchParams;
   const user = await requireUser();
 
-  if (!isPremium(user.company)) {
+  if (!canCreateQuotes(user.company)) {
     return (
       <div className="flex flex-col gap-4">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">見積を作成</h1>

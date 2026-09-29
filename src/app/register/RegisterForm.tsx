@@ -4,9 +4,26 @@ import { useActionState } from "react";
 import Link from "next/link";
 import { registerAction } from "./actions";
 import { Input, Button, Card, FieldLabel } from "@/components/ui";
+import type { MonitorSignupStatus } from "@/lib/monitor";
 
-export function RegisterForm({ googleEnabled }: { googleEnabled: boolean }) {
+const CLOSED_MESSAGE: Record<string, (s: MonitorSignupStatus) => string> = {
+  not_started: (s) =>
+    s.status === "not_started"
+      ? `モニター受付は${s.startsAt.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "long", day: "numeric" })}から開始します。もうしばらくお待ちください。`
+      : "",
+  disabled: () => "現在、新規のモニター受付を停止しています。",
+  full: (s) => (s.status === "full" ? `モニター枠(${s.capacity}社)が満員になりました。新規のお申し込みは受け付けておりません。` : ""),
+};
+
+export function RegisterForm({
+  googleEnabled,
+  monitorStatus,
+}: {
+  googleEnabled: boolean;
+  monitorStatus: MonitorSignupStatus;
+}) {
   const [state, formAction, pending] = useActionState(registerAction, undefined);
+  const isOpen = monitorStatus.status === "open";
 
   return (
     <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-amber-600 via-orange-600 to-slate-900 px-4 py-12">
@@ -15,12 +32,22 @@ export function RegisterForm({ googleEnabled }: { googleEnabled: boolean }) {
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-xl font-bold backdrop-blur">
             現
           </span>
-          <h1 className="text-2xl font-bold tracking-tight">会社登録(無料)</h1>
-          <p className="text-sm text-white/70">会社情報と管理者アカウントを作成します</p>
+          <h1 className="text-2xl font-bold tracking-tight">会社登録(モニター30社限定)</h1>
+          <p className="text-sm text-white/70">登録から6か月間、主な機能を無料でご利用いただけます</p>
         </div>
 
         <Card>
-          {googleEnabled && (
+          {isOpen && (
+            <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              モニター受付中です(残り{monitorStatus.remaining}/{monitorStatus.capacity}社)。登録完了日から6か月間、主な機能を無料でご利用いただけます。
+            </p>
+          )}
+          {!isOpen && (
+            <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {CLOSED_MESSAGE[monitorStatus.status]?.(monitorStatus) ?? "現在、新規登録を受け付けておりません。"}
+            </p>
+          )}
+          {isOpen && googleEnabled && (
             <>
               <a
                 href="/api/auth/google/start"
@@ -40,45 +67,47 @@ export function RegisterForm({ googleEnabled }: { googleEnabled: boolean }) {
             </>
           )}
 
-          <form action={formAction} className="flex flex-col gap-4">
-            <FieldLabel label="会社名" required>
-              <Input name="companyName" required />
-            </FieldLabel>
-            <FieldLabel label="代表者名">
-              <Input name="representativeName" />
-            </FieldLabel>
-            <FieldLabel label="担当者氏名" required>
-              <Input name="userName" required />
-            </FieldLabel>
-            <FieldLabel label="メールアドレス" required>
-              <Input name="email" type="email" required />
-            </FieldLabel>
-            <FieldLabel label="パスワード(8文字以上)" required>
-              <Input name="password" type="password" required minLength={8} />
-            </FieldLabel>
+          {isOpen && (
+            <form action={formAction} className="flex flex-col gap-4">
+              <FieldLabel label="会社名" required>
+                <Input name="companyName" required />
+              </FieldLabel>
+              <FieldLabel label="代表者名">
+                <Input name="representativeName" />
+              </FieldLabel>
+              <FieldLabel label="担当者氏名" required>
+                <Input name="userName" required />
+              </FieldLabel>
+              <FieldLabel label="メールアドレス" required>
+                <Input name="email" type="email" required />
+              </FieldLabel>
+              <FieldLabel label="パスワード(8文字以上)" required>
+                <Input name="password" type="password" required minLength={8} />
+              </FieldLabel>
 
-            <label className="flex items-start gap-2 text-sm text-slate-600">
-              <input type="checkbox" name="agreed" className="mt-1 accent-amber-600" />
-              <span>
-                <Link href="/terms" target="_blank" className="text-orange-700 underline">
-                  利用規約
-                </Link>
-                ・
-                <Link href="/privacy" target="_blank" className="text-orange-700 underline">
-                  プライバシーポリシー
-                </Link>
-                に同意します。
-              </span>
-            </label>
+              <label className="flex items-start gap-2 text-sm text-slate-600">
+                <input type="checkbox" name="agreed" className="mt-1 accent-amber-600" />
+                <span>
+                  <Link href="/terms" target="_blank" className="text-orange-700 underline">
+                    利用規約
+                  </Link>
+                  ・
+                  <Link href="/privacy" target="_blank" className="text-orange-700 underline">
+                    プライバシーポリシー
+                  </Link>
+                  に同意します。
+                </span>
+              </label>
 
-            {state?.error && (
-              <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
-            )}
+              {state?.error && (
+                <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{state.error}</p>
+              )}
 
-            <Button type="submit" disabled={pending} className="mt-1 w-full">
-              {pending ? "登録中..." : "登録する"}
-            </Button>
-          </form>
+              <Button type="submit" disabled={pending} className="mt-1 w-full">
+                {pending ? "登録中..." : "登録する"}
+              </Button>
+            </form>
+          )}
 
           <p className="mt-6 text-center text-sm text-slate-500">
             既にアカウントをお持ちの方は{" "}

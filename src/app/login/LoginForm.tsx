@@ -10,6 +10,9 @@ const GOOGLE_ERROR_MESSAGE: Record<string, string> = {
   google_failed: "Googleログインに失敗しました。もう一度お試しください。",
   google_email_unverified: "Googleで確認済みのメールアドレスが必要です。",
   google_not_configured: "現在Googleログインはご利用いただけません。",
+  monitor_not_started: "モニター受付はまだ開始していません。もうしばらくお待ちください。",
+  monitor_disabled: "現在、新規のモニター受付を停止しています。",
+  monitor_full: "モニター枠が満員になりました。新規のお申し込みは受け付けておりません。",
 };
 
 export function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { exchangeGoogleCode, isGoogleConfigured } from "@/lib/googleAuth";
 import { createSession } from "@/lib/session";
 import { logAction } from "@/lib/audit";
+import { tryEnrollMonitor } from "@/lib/monitor";
 
 const STATE_COOKIE = "google_oauth_state";
 
@@ -52,9 +53,19 @@ export async function GET(request: Request) {
   let isNewSignup = false;
   if (!user) {
     isNewSignup = true;
-    const { company, user: created } = await prisma.$transaction(async (tx) => {
+    // 公開前修正①: 通常登録(src/app/register/actions.ts)と同じ枠・同じ判定を使う。
+    // 枠の確認・会社作成・利用者作成を同じトランザクションでまとめる。
+    const result = await prisma.$transaction(async (tx) => {
+      const enrollment = await tryEnrollMonitor(tx);
+      if (!enrollment.ok) return { ok: false as const, status: enrollment.status };
+
       const company = await tx.company.create({
-        data: { name: `${identity.name ?? identity.email}の会社` },
+        data: {
+          name: `${identity.name ?? identity.email}の会社`,
+          isMonitor: true,
+          monitorEnrolledAt: enrollment.enrolledAt,
+          monitorFreeMonths: enrollment.freeMonths,
+        },
       });
       const created = await tx.user.create({
         data: {
@@ -67,8 +78,13 @@ export async function GET(request: Request) {
           emailVerifiedAt: new Date(), // Googleが確認済みのメールのため、自前の確認メールは不要
         },
       });
-      return { company, user: created };
+      return { ok: true as const, company, user: created };
     });
+
+    if (!result.ok) {
+      return fail(request, `monitor_${result.status.status}`);
+    }
+    const { company, user: created } = result;
     user = { ...created, company };
     await logAction({
       companyId: company.id,

@@ -63,6 +63,11 @@ model Company {
   bankAccountHolder         String?
   logoUrl                   String?
   plan                      CompanyPlan        @default(FREE)
+  // モニター(30社限定・登録から6暦月無料)としての登録。既存の有料契約(plan/subscriptionStatus)
+  // とは別に管理する(Stripeの契約状態を偽装しない。調査依頼「公開前修正①」)。
+  isMonitor                 Boolean            @default(false)
+  monitorEnrolledAt         DateTime? // 登録完了日時(無料期間の起算日)。isMonitor=falseならnull
+  monitorFreeMonths         Int? // 登録当時のモニタープログラムの無料月数を固定で保存(後から設定を変えても既存会社に遡及させない)
   // 運営側(サービス提供者)がこの会社の利用を止めるためのフラグ(Phase9運営管理画面から操作する想定)。
   // ユーザー自身の退会(User.deletedAt)とは別物 — 未払い・規約違反等、運営都合の停止に使う。
   isSuspended               Boolean            @default(false)
@@ -118,6 +123,17 @@ model BillingEvent {
   createdAt     DateTime @default(now())
 
   @@index([companyId])
+}
+
+// モニター募集(公開前修正①「30社限定・登録から6か月無料」)の設定。常に1行だけ存在する
+// (idは固定文字列)。運営画面(/admin/monitor)から有効・無効/開始日時/枠数/無料月数を変更する。
+model MonitorProgram {
+  id         String   @id @default("singleton")
+  enabled    Boolean  @default(false) // falseなら開始日時を過ぎていても受付停止中として扱う
+  capacity   Int      @default(30)
+  startsAt   DateTime // 受付開始日時(UTCで保存。日本時間2026-10-01 00:00 = 2026-09-30T15:00:00Z)
+  freeMonths Int      @default(6)
+  updatedAt  DateTime @updatedAt
 }
 
 enum KyStatus {

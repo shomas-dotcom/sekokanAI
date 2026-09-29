@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui";
+import { monitorFreeUntil } from "@/lib/monitor";
 
 export default async function OnboardingPage() {
   const user = await requireUser();
@@ -66,6 +67,20 @@ export default async function OnboardingPage() {
             : `あと${steps.length - doneCount}ステップで、ひととおりの機能を体験できます。`}
         </p>
       </div>
+
+      {company.isMonitor &&
+        (() => {
+          const until = monitorFreeUntil(company);
+          return (
+            <Card className="border-emerald-200 bg-emerald-50">
+              <p className="font-semibold text-emerald-800">モニターにご登録いただきありがとうございます</p>
+              <p className="mt-1 text-sm text-emerald-700">
+                登録から6か月間{until ? `(${until.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })}まで)` : ""}
+                、見積作成を含む主な機能を無料でご利用いただけます。カードのご登録は不要です。
+              </p>
+            </Card>
+          );
+        })()}
 
       <div className="flex flex-col gap-3">
         {steps.map((step, i) => (

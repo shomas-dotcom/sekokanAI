@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isStripeConfigured, isMockBillingAllowed } from "@/lib/stripe";
+import { isMonitorPeriodActive, monitorFreeUntil } from "@/lib/monitor";
 import { Card, Badge } from "@/components/ui";
 import { SUBSCRIPTION_STATUS_LABEL } from "./statusLabel";
 import { StartSubscriptionForm, BillingPortalForm } from "./BillingForms";
@@ -48,9 +49,27 @@ export default async function BillingPage({
           STRIPE_SECRET_KEY / STRIPE_PRICE_ID / STRIPE_WEBHOOK_SECRET の設定が必要です。
         </Card>
       )}
-      {!configured && !isMockBillingAllowed() && (
+      {!configured && !isMockBillingAllowed() && !isMonitorPeriodActive(company) && (
         <Card className="border-amber-200 bg-amber-50 text-sm text-amber-800">
           現在、有料プランのお申し込みは受付準備中です。ご利用をご希望の方はお問い合わせページからご連絡ください。
+        </Card>
+      )}
+
+      {company.isMonitor && (
+        <Card className="border-emerald-200 bg-emerald-50 text-sm text-emerald-800">
+          {isMonitorPeriodActive(company) ? (
+            <>
+              モニター利用中です。無料期間は
+              {monitorFreeUntil(company)?.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })}
+              までです。この期間はご契約なしで主な機能をご利用いただけます。
+            </>
+          ) : (
+            <>
+              モニターの無料期間(
+              {monitorFreeUntil(company)?.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })}まで)は終了しました。
+              保存済みのデータの閲覧・出力は引き続きご利用いただけますが、見積の新規作成にはご契約が必要です。
+            </>
+          )}
         </Card>
       )}
 

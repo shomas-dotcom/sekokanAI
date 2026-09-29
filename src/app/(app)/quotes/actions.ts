@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireUser, requireAdmin } from "@/lib/auth";
-import { isPremium } from "@/lib/premium";
+import { canCreateQuotes } from "@/lib/monitor";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { draftQuoteItemsFromText } from "@/lib/ai";
@@ -38,9 +38,9 @@ export async function createQuoteAction(
   formData: FormData
 ): Promise<QuoteFormState> {
   const user = await requireUser();
-  // AI見積書作成はプレミアム機能。UI側でも案内するが、Server Functionは直接POSTで
-  // 到達可能なためここでも必ず検証する(SECURITY.md)。
-  if (!isPremium(user.company)) return { error: "この機能はAIプレミアムのご契約が必要です。" };
+  // AI見積書作成はプレミアム機能(モニター無料期間中も利用可)。UI側でも案内するが、
+  // Server Functionは直接POSTで到達可能なためここでも必ず検証する(SECURITY.md)。
+  if (!canCreateQuotes(user.company)) return { error: "この機能はAIプレミアムのご契約が必要です。" };
 
   const projectId = String(formData.get("projectId") ?? "");
   const title = String(formData.get("title") ?? "").trim();
