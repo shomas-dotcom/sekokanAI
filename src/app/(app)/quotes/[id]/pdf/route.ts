@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE_NAME } from "@/lib/session";
 import { renderPrintPageToPdf } from "@/lib/pdf/renderPdf";
+import { buildContentDisposition, sanitizeFilenameComponent } from "@/lib/pdf/pdfFilename";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -34,14 +35,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   // 日付・顧客名・工事名がわかるファイル名にする(依頼: 「日付と工事名顧客名を記載したファイル名」)。
-  const dateText = quote.createdAt
-    .toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" })
-    .replaceAll("/", "");
-  const filename = `見積書_${dateText}_${quote.project.customer.name}_${quote.project.name}.pdf`;
+  const dateText = quote.createdAt.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+  const customerName = sanitizeFilenameComponent(quote.project.customer.name);
+  const projectName = sanitizeFilenameComponent(quote.project.name);
+  const filename = `見積書_${dateText}_${customerName}_${projectName}.pdf`;
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${encodeURIComponent(filename)}"`,
+      "Content-Disposition": buildContentDisposition(filename),
     },
   });
 }
