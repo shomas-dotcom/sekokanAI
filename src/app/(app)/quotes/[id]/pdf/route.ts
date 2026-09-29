@@ -9,7 +9,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const user = await requireUser();
 
-  const quote = await prisma.quote.findFirst({ where: { id, companyId: user.companyId }, select: { id: true, title: true } });
+  const quote = await prisma.quote.findFirst({
+    where: { id, companyId: user.companyId },
+    select: { id: true, title: true, createdAt: true, project: { select: { name: true, customer: { select: { name: true } } } } },
+  });
   if (!quote) {
     return NextResponse.json({ error: "見積が見つかりません。" }, { status: 404 });
   }
@@ -30,7 +33,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     );
   }
 
-  const filename = `見積書_${quote.title}.pdf`;
+  // 日付・顧客名・工事名がわかるファイル名にする(依頼: 「日付と工事名顧客名を記載したファイル名」)。
+  const dateText = quote.createdAt
+    .toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" })
+    .replaceAll("/", "");
+  const filename = `見積書_${dateText}_${quote.project.customer.name}_${quote.project.name}.pdf`;
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/pdf",

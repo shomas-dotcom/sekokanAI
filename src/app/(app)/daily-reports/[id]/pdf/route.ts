@@ -11,7 +11,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const report = await prisma.dailyReport.findFirst({
     where: { id, companyId: user.companyId },
-    select: { id: true, reportDate: true, project: { select: { name: true } } },
+    select: { id: true, reportDate: true, project: { select: { name: true, customer: { select: { name: true } } } } },
   });
   if (!report) {
     return NextResponse.json({ error: "日報が見つかりません。" }, { status: 404 });
@@ -33,7 +33,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     );
   }
 
-  const filename = `日報_${report.reportDate.toLocaleDateString("ja-JP")}_${report.project.name}.pdf`;
+  // 日付・顧客名・工事名がわかるファイル名にする(依頼: 「日付と工事名顧客名を記載したファイル名」)。
+  const dateText = report.reportDate
+    .toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" })
+    .replaceAll("/", "");
+  const filename = `日報_${dateText}_${report.project.customer.name}_${report.project.name}.pdf`;
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/pdf",
