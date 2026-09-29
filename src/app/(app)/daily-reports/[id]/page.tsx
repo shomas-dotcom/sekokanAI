@@ -90,6 +90,12 @@ export default async function DailyReportDetailPage({
           >
             印刷 / PDF
           </Link>
+          <a
+            href={`/daily-reports/${report.id}/pdf`}
+            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+          >
+            PDFをダウンロード
+          </a>
           {user.role === "ADMIN" && (
             <Link
               href={`/daily-reports/${report.id}/cost-ledger`}

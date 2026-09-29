@@ -91,6 +91,9 @@ export default async function QuoteDetailPage({
           <Link href={`/quotes/${quote.id}/print`} className={secondaryButtonClass}>
             印刷 / PDF保存
           </Link>
+          <a href={`/quotes/${quote.id}/pdf`} className={secondaryButtonClass}>
+            PDFをダウンロード
+          </a>
           {quote.templateVersion ? (
             <a href={`/quotes/${quote.id}/xlsx`} className={secondaryButtonClass}>
               Excel出力({quote.templateVersion.template.name})

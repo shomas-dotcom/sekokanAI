@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { randomBytes, createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 
-const COOKIE_NAME = "genba_session";
+export const SESSION_COOKIE_NAME = "genba_session";
+const COOKIE_NAME = SESSION_COOKIE_NAME;
 const SESSION_DAYS = 30;
 
 function hashToken(token: string): string {
