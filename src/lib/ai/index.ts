@@ -546,6 +546,78 @@ function mockDraftDailyReport(rawText: string): DailyReportDraft {
   };
 }
 
+// --- 日報かんたん入力: 話した内容から、作業内容・機械・人数・危険を会社の一覧から選ぶ(2026-10追記) ---
+//
+// AIには「会社の一覧にある名前の中から、話に出てきたものを選ぶ」ことだけをさせる。
+// 単価・金額・対策は一切扱わない。返ってきた名前は、呼び出し側(quickExtractAi.ts)が会社の一覧と
+// 機械的に突き合わせ、一覧にないものは確定させずに「確認が必要」として扱う。
+// AI_API_KEY未設定・AI呼び出しの失敗・利用回数の上限のときは null を返し、ルールだけの抽出に任せる。
+
+export type QuickEntityHints = {
+  works: { name: string; quantity: number | null; unit: string | null }[];
+  machines: { name: string; quantity: number | null }[];
+  workerCount: number | null;
+  manDaysTotal: number | null;
+  hazards: string[];
+  nextDayPlan: string | null;
+};
+
+export async function pickQuickEntitiesWithAi(
+  rawTextInput: string,
+  candidates: { works: string[]; machines: string[]; hazards: string[] },
+  usageContext?: AiUsageContext
+): Promise<QuickEntityHints | null> {
+  if (isMockMode()) return null;
+  const rawText = normalizeExtractedText(rawTextInput);
+
+  const system = `あなたは建設現場の作業日報の入力を補助するアシスタントです。
+話された内容(音声認識の文章)から、次の一覧にある名前だけを使って、話に出てきたものを選んでください。
+必ずJSONオブジェクトのみを出力してください(説明文・前置き・コードブロックの外側の文章は一切不要です)。
+形式: {"works":[{"name":string,"quantity":number|null,"unit":string|null}],"machines":[{"name":string,"quantity":number|null}],"workerCount":number|null,"manDaysTotal":number|null,"hazards":[string],"nextDayPlan":string|null}
+- works/machines/hazards の name は、下の一覧にある名前を一字一句そのまま使うこと。一覧にないものは含めないこと。
+- quantity は話の中に明記された数字だけ。unit は m, ㎡, ㎥, 箇所, 枚, 本 のいずれか。分からなければ null。
+- machines の quantity は台数。明記がなければ 1。
+- workerCount は作業員の合計人数、manDaysTotal は人工の合計。明記がなければ null。
+- 話に出てこないものを推測で入れないこと。金額・単価・安全対策は出力しないこと。
+作業内容の一覧: ${JSON.stringify(candidates.works)}
+使用機械の一覧: ${JSON.stringify(candidates.machines)}
+危険の一覧: ${JSON.stringify(candidates.hazards)}`;
+
+  let raw: string;
+  try {
+    raw = await callAnthropic(system, rawText, usageContext);
+  } catch (err) {
+    console.error("[ai] pickQuickEntitiesWithAi: falling back to rules only", err);
+    return null;
+  }
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  if (!parsed) return null;
+
+  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
+  const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+  return {
+    works: arr(parsed.works).flatMap((w) => {
+      const o = w as Record<string, unknown>;
+      const name = str(o?.name);
+      return name ? [{ name, quantity: num(o.quantity), unit: str(o.unit) }] : [];
+    }),
+    machines: arr(parsed.machines).flatMap((m) => {
+      const o = m as Record<string, unknown>;
+      const name = str(o?.name);
+      return name ? [{ name, quantity: num(o.quantity) }] : [];
+    }),
+    workerCount: num(parsed.workerCount),
+    manDaysTotal: num(parsed.manDaysTotal),
+    hazards: arr(parsed.hazards).flatMap((h) => {
+      const name = str(h);
+      return name ? [name] : [];
+    }),
+    nextDayPlan: str(parsed.nextDayPlan),
+  };
+}
+
 // ダッシュボードの「AIに話す」窓口が、話した内容を日報・KY(危険予知)・見積・
 // 請求・施工計画・安全書類・ヒヤリハット・顧客登録・従業員登録・案件依頼のどれに
 // 振り分けるかを判定する。業務内容があって迷う場合は日報側に倒すが、挨拶のみ・

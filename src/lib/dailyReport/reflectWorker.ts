@@ -22,6 +22,66 @@ export const OVERLAP_REMARK = "【要確認】同じ日の別の日報と作業�
 // 承認前の出面だけ、日報の修正に合わせて直す(承認済み・締め済みは給与・請求の根拠なので変えない)。
 export const SITE_ATTENDANCE_EDITABLE = ["DRAFT", "SUBMITTED", "REJECTED"];
 
+type WorkerWithLinks = Prisma.DailyReportWorkerGetPayload<{ include: { attendance: true; siteAttendance: true } }>;
+
+/**
+ * 作業員明細を消し、そこから作られた出面・勤怠も承認前のものだけ一緒に整える。
+ * - 出面: 承認前(下書き・提出済み・差し戻し)なら消す。承認済み・締め済みは残し、理由を返す。
+ * - 勤怠: 下書き・差し戻しのものだけ。同じ日の別の日報にも入っている人は、残りの分から計算し直す。
+ *   だれも残らなければ消す。提出済み以降の勤怠は残す(給与の根拠のため)。
+ * こうしないと、消したはずの作業員の人工・原価が、現場別の集計に残り続ける。
+ */
+export async function removeWorkerWithDerived(
+  db: Prisma.TransactionClient,
+  worker: WorkerWithLinks,
+  actor: { id: string; companyId: string },
+  settings: WorkSettings
+): Promise<{ warnings: string[]; audit: AuditEntry[] }> {
+  const warnings: string[] = [];
+  const audit: AuditEntry[] = [];
+
+  await db.dailyReportWorker.delete({ where: { id: worker.id } });
+
+  if (worker.siteAttendance) {
+    if (SITE_ATTENDANCE_EDITABLE.includes(worker.siteAttendance.status)) {
+      await db.siteAttendance.delete({ where: { id: worker.siteAttendance.id } });
+    } else {
+      warnings.push(`「${worker.workerName}」の出面は承認済み・締め済みのため残しています。`);
+    }
+  }
+  if (worker.attendance && (worker.attendance.status === "DRAFT" || worker.attendance.status === "REJECTED")) {
+    const remaining = await db.dailyReportWorker.findFirst({
+      where: { attendanceId: worker.attendance.id, reflectToAttendance: true },
+    });
+    if (remaining) {
+      audit.push(...(await reflectDailyReportWorker(db, remaining.id, actor, settings)));
+    } else {
+      await db.attendance.delete({ where: { id: worker.attendance.id } });
+    }
+  }
+  return { warnings, audit };
+}
+
+/**
+ * 機械の使用明細を消し、そこから作られた経費(原価)も確定前のものは一緒に消す。
+ * 確定済みの経費は残し、理由を返す。
+ */
+export async function removeMachineUsageWithExpense(
+  db: Prisma.TransactionClient,
+  usage: Prisma.DailyReportMachineUsageGetPayload<{ include: { siteExpenseEntry: true } }>
+): Promise<string[]> {
+  const warnings: string[] = [];
+  await db.dailyReportMachineUsage.delete({ where: { id: usage.id } });
+  if (usage.siteExpenseEntry) {
+    if (usage.siteExpenseEntry.status === "DRAFT") {
+      await db.siteExpenseEntry.delete({ where: { id: usage.siteExpenseEntry.id } });
+    } else {
+      warnings.push(`「${usage.name}」の経費は確定済みのため残しています。`);
+    }
+  }
+  return warnings;
+}
+
 /**
  * 労務原価の単価(1人工あたり・円)を引き当てる。従業員ごとの単価を優先し、なければ区分ごとの単価。
  * どちらも未登録なら null(0円にせず「単価未登録」として扱う)。

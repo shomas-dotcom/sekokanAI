@@ -31,6 +31,24 @@ describe("音声からの自動抽出(ルール)", () => {
     expect(result.nextDayPlan).toBe("桝設置を行います");
   });
 
+  it("翌日の予定として話した作業・機械・人数・危険は、今日のものとして取り出さない", () => {
+    const result = extractQuickEntriesByRules(
+      "汚水管を20m布設。作業員3名。明日は桝設置で4tダンプ2台、作業員5名、熱中症に注意。",
+      masters
+    );
+    expect(result.works.map((w) => w.label)).toEqual(["汚水管布設"]);
+    expect(result.machines).toEqual([]);
+    expect(result.workerCount).toBe(3);
+    expect(result.hazards).toEqual([]);
+    expect(result.nextDayPlan).toBe("桝設置で4tダンプ2台、作業員5名、熱中症に注意");
+  });
+
+  it("同じ文の途中から翌日の話になっても、その前までは今日のものとして取り出す", () => {
+    const result = extractQuickEntriesByRules("掘削を30m3実施、明日は型枠工。", masters);
+    expect(result.works.map((w) => w.label)).toEqual(["掘削工"]);
+    expect(result.nextDayPlan).toBe("型枠工");
+  });
+
   it("バックホーの大きさが分からないときは機械を入れず、確認を促す", () => {
     const result = extractQuickEntriesByRules("バックホウで掘削した。", masters);
     expect(result.machines).toEqual([]);

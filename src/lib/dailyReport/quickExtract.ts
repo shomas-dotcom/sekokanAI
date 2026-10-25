@@ -181,7 +181,16 @@ export function extractQuickEntriesByRules(rawText: string, masters: ExtractMast
   };
   const unclear = new Set<string>();
 
-  const sentences = text.split(/[。\n]/).map((s) => s.trim()).filter(Boolean);
+  // 「明日は桝設置」「翌日は型枠」のように、翌日の予定を話した部分は、今日の作業・機械・人数・危険として
+  // 読み取らない(翌日の予定の欄にだけ入れる)。文の途中から翌日の話になるときは、そこから先を除く。
+  const sentences = text
+    .split(/[。\n]/)
+    .map((s) => {
+      const cut = s.search(/明日|翌日/);
+      return (cut >= 0 ? s.slice(0, cut) : s).trim();
+    })
+    .filter(Boolean);
+  const todayText = sentences.join("。");
 
   for (const sentence of sentences) {
     const unclearHere: string[] = [];
@@ -231,15 +240,15 @@ export function extractQuickEntriesByRules(rawText: string, masters: ExtractMast
   }
 
   // 作業員数・人工数(文章全体から)。「4人工」は人数に数えない。
-  for (const m of text.matchAll(/(\d+)\s*(?:名|人)(?!工)/g)) {
+  for (const m of todayText.matchAll(/(\d+)\s*(?:名|人)(?!工)/g)) {
     result.workerCount = (result.workerCount ?? 0) + Number(m[1]);
   }
-  for (const m of text.matchAll(/(\d+(?:\.\d+)?)\s*人工/g)) {
+  for (const m of todayText.matchAll(/(\d+(?:\.\d+)?)\s*人工/g)) {
     result.manDaysTotal = (result.manDaysTotal ?? 0) + Number(m[1]);
   }
 
   // 危険予知: マスタの危険(言い方の揺れも含む)と、会社が足した独自の危険を見つける。
-  const lowered = text.toLowerCase();
+  const lowered = todayText.toLowerCase();
   for (const hazard of masters.hazards) {
     const aliases = HAZARD_ALIASES[hazard.label];
     const hit = (aliases ? aliases.some((re) => re.test(lowered)) : false) || lowered.includes(normalizeName(hazard.label));

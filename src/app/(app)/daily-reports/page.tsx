@@ -108,22 +108,30 @@ export default async function DailyReportsPage({
           {reports.map((r) => {
             const unclearCount = r.unclearItemsJson ? JSON.parse(r.unclearItemsJson).length : 0;
             return (
-              <Link
+              <div
                 key={r.id}
-                href={`/daily-reports/${r.id}`}
-                className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50 transition hover:-translate-y-0.5 hover:shadow-md"
+                className="flex items-stretch rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/50 transition hover:shadow-md"
               >
-                <div>
-                  <p className="font-semibold text-slate-900">
-                    {r.reportDate.toLocaleDateString("ja-JP")} / {r.project.customer.name} / {r.project.name}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {r.weather ?? "天候未確認"} ・ 作業員 {r.workerCount ?? "?"} 名
-                    {r.foremanName ? ` ・ 職長 ${r.foremanName}` : ""}
-                  </p>
-                </div>
-                {unclearCount > 0 && <Badge className="bg-amber-50 text-amber-700">要確認 {unclearCount}件</Badge>}
-              </Link>
+                <Link href={`/daily-reports/${r.id}`} className="flex min-w-0 flex-1 items-center justify-between gap-2 p-4">
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      {r.reportDate.toLocaleDateString("ja-JP")} / {r.project.customer.name} / {r.project.name}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {r.weather ?? "天候未確認"} ・ 作業員 {r.workerCount ?? "?"} 名
+                      {r.foremanName ? ` ・ 職長 ${r.foremanName}` : ""}
+                    </p>
+                  </div>
+                  {unclearCount > 0 && <Badge className="shrink-0 bg-amber-50 text-amber-700">要確認 {unclearCount}件</Badge>}
+                </Link>
+                <Link
+                  href={`/daily-reports/${r.id}/edit`}
+                  className="flex min-w-16 shrink-0 items-center justify-center rounded-r-2xl border-l border-slate-100 px-3 text-sm font-semibold text-amber-700 hover:bg-amber-50"
+                  aria-label={`${r.reportDate.toLocaleDateString("ja-JP")}の日報を修正する`}
+                >
+                  修正
+                </Link>
+              </div>
             );
           })}
         </div>

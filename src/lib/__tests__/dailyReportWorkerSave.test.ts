@@ -18,7 +18,10 @@ const db = vi.hoisted(() => {
     },
     dailyReport: { update: vi.fn() },
     attendance: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
-    siteAttendance: { create: vi.fn() },
+    siteAttendance: { create: vi.fn(), findUnique: vi.fn() },
+    // 出面へ反映するとき、登録済みの労務単価(従業員別・区分別)を引き当てる(2026-10追加)
+    employeeLaborRate: { findFirst: vi.fn() },
+    laborCategoryRate: { findFirst: vi.fn() },
   };
   return {
     tx,
@@ -89,11 +92,17 @@ beforeEach(() => {
     breakMinutes: 120,
     workMinutes: 420,
     manDays: null,
+    laborCategory: null,
+    headcount: 1,
+    siteAttendanceId: null,
     isBillable: true,
     reflectToAttendance: true,
     reflectToSiteAttendance: true,
     dailyReport: { id: "r1", reportDate, projectId: "p1" },
   });
+  db.tx.employeeLaborRate.findFirst.mockResolvedValue(null); // 労務単価は未登録(従来どおり原価は未入力のまま)
+  db.tx.laborCategoryRate.findFirst.mockResolvedValue(null);
+  db.tx.siteAttendance.findUnique.mockResolvedValue(null);
   db.tx.attendance.findUnique.mockResolvedValue(null);
   db.tx.attendance.create.mockResolvedValue({ id: "a1" });
   db.tx.siteAttendance.create.mockResolvedValue({ id: "s1" });

@@ -11,8 +11,12 @@ import {
 } from "../actions";
 import { Card, Input, Textarea, Select, Button, FieldLabel } from "@/components/ui";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
+import { ConfirmSubmitButton } from "@/components/ConfirmSubmitButton";
 import { PhotoUploadForm } from "./photos/PhotoUploadForm";
 import { PhotoGallery } from "./photos/PhotoGallery";
+import { ClearQuickDraft } from "../quick/ClearQuickDraft";
+import { parseMeasures } from "@/lib/dailyReport/masters";
+import { LABOR_CATEGORY_LABEL } from "@/lib/dailyReport/standardMasters";
 
 const WORKER_TYPE_LABEL: Record<string, string> = {
   EMPLOYEE: "自社従業員",
@@ -26,10 +30,10 @@ export default async function DailyReportDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ dateError?: string }>;
+  searchParams: Promise<{ dateError?: string; saved?: string; notice?: string }>;
 }) {
   const { id } = await params;
-  const { dateError } = await searchParams;
+  const { dateError, saved, notice } = await searchParams;
   const user = await requireUser();
 
   const [report, employees, availableTemplates] = await Promise.all([
@@ -42,10 +46,13 @@ export default async function DailyReportDetailPage({
           orderBy: { sortOrder: "asc" },
           include: {
             attendance: { select: { status: true } },
-            siteAttendance: { select: { status: true } },
+            siteAttendance: { select: { status: true, laborCostAmount: true } },
           },
         },
         templateVersion: { include: { template: true } },
+        workEntries: { orderBy: { sortOrder: "asc" } },
+        machineUsages: { orderBy: { sortOrder: "asc" } },
+        kyEntries: { orderBy: { sortOrder: "asc" } },
       },
     }),
     prisma.employee.findMany({ where: { companyId: user.companyId }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -87,6 +94,12 @@ export default async function DailyReportDetailPage({
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/daily-reports/${report.id}/edit`}
+            className="rounded-full bg-gradient-to-br from-amber-500 to-orange-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm shadow-orange-600/25 hover:from-amber-400 hover:to-orange-500"
+          >
+            かんたん入力で修正(日付も変えられます)
+          </Link>
           <Link
             href={`/daily-reports/${report.id}/print`}
             className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
@@ -161,6 +174,27 @@ export default async function DailyReportDetailPage({
         </div>
       )}
 
+      {saved && <ClearQuickDraft reportId={report.id} />}
+      {saved && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
+          日報を保存しました。
+        </div>
+      )}
+      {notice && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">お知らせ</p>
+          <ul className="mt-1 list-inside list-disc">
+            {notice
+              .slice(0, 800)
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+          </ul>
+        </div>
+      )}
+
       {unclearItems.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <p className="font-semibold text-amber-800">確認が必要な項目({unclearItems.length}件)</p>
@@ -181,6 +215,76 @@ export default async function DailyReportDetailPage({
         <Card className="bg-slate-50">
           <p className="text-xs font-medium text-slate-500">音声認識結果(原文)</p>
           <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{report.rawVoiceInput}</p>
+        </Card>
+      )}
+
+      {report.workEntries.length + report.machineUsages.length + report.kyEntries.length > 0 && (
+        <Card className="max-w-xl">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="font-semibold text-slate-900">かんたん入力の内容</h2>
+            <Link href={`/daily-reports/${report.id}/edit`} className="text-sm font-medium text-amber-700 underline">
+              修正する
+            </Link>
+          </div>
+          <div className="flex flex-col gap-3 text-sm text-slate-800">
+            {report.workEntries.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-semibold text-slate-500">作業内容</p>
+                <ul className="flex flex-col gap-0.5">
+                  {report.workEntries.map((w) => (
+                    <li key={w.id}>
+                      {w.label}
+                      {w.quantity != null && ` ${w.quantity}${w.unit ?? ""}`}
+                      {w.workMinutes != null && `(${Math.round((w.workMinutes / 60) * 100) / 100}時間)`}
+                      {w.remarks && ` / ${w.remarks}`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {report.machineUsages.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-semibold text-slate-500">使用機械</p>
+                <ul className="flex flex-col gap-0.5">
+                  {report.machineUsages.map((m) => (
+                    <li key={m.id}>
+                      {m.name} {m.quantity}台 × {m.usageValue}
+                      {m.priceUnit === "HOUR" ? "時間" : "日"}
+                      {m.ownership === "RENTAL" ? "(レンタル)" : ""}
+                      {user.role === "ADMIN" && (
+                        <span className="ml-1 text-slate-500">
+                          {m.amount != null ? `・${m.amount.toLocaleString("ja-JP")}円` : "・単価未登録"}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {report.kyEntries.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-semibold text-slate-500">KY(危険予知)</p>
+                <ul className="flex flex-col gap-1">
+                  {report.kyEntries.map((k) => {
+                    const measures = parseMeasures(k.measuresJson);
+                    return (
+                      <li key={k.id}>
+                        {k.label}
+                        {measures.length > 0 ? (
+                          <span className="text-slate-500"> — 対策: {measures.join("、")}</span>
+                        ) : (
+                          <span className="text-amber-700"> — 対策が選ばれていません</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            <p className="text-xs text-slate-500">
+              作業内容・使用機械・危険予知は、かんたん入力の画面で直すと、下の文章欄にも反映されます(下の欄を直接直した内容は、次にかんたん入力で保存したときに置き換わります)。
+            </p>
+          </div>
         </Card>
       )}
 
@@ -292,7 +396,23 @@ export default async function DailyReportDetailPage({
                     {w.startTime ?? "-"}〜{w.endTime ?? "-"}
                   </span>
                 )}
-                {w.manDays != null && <span>{w.manDays}人工</span>}
+                {w.laborCategory && <span>区分: {LABOR_CATEGORY_LABEL[w.laborCategory]}</span>}
+                {w.affiliation && <span>所属: {w.affiliation}</span>}
+                {w.headcount > 1 && <span>{w.headcount}名</span>}
+                {w.manDays != null && (
+                  <span>
+                    {w.headcount > 1 ? `${w.headcount}名×` : ""}
+                    {w.manDays}人工
+                  </span>
+                )}
+                {user.role === "ADMIN" && w.siteAttendance && (
+                  <span>
+                    労務費:{" "}
+                    {w.siteAttendance.laborCostAmount != null
+                      ? `${w.siteAttendance.laborCostAmount.toLocaleString("ja-JP")}円`
+                      : "単価未登録"}
+                  </span>
+                )}
                 {w.workDescription && <span>作業内容: {w.workDescription}</span>}
               </div>
               <div className="mt-1 flex flex-wrap gap-2 text-xs">
@@ -375,9 +495,14 @@ export default async function DailyReportDetailPage({
 
       <form action={deleteDailyReportAction} className="max-w-xl">
         <input type="hidden" name="id" value={report.id} />
-        <Button type="submit" variant="danger">
+        <ConfirmSubmitButton
+          message={
+            "この日報を削除します。写真も一緒に消えて、元に戻せません。\nまだ承認前の出面・勤怠・機械の経費も、この日報の分は一緒に消えます(承認済み・締め済みのものは残ります)。\n本当に削除しますか?"
+          }
+          className="text-sm font-medium text-rose-600 underline decoration-rose-300 underline-offset-2 hover:text-rose-700"
+        >
           この日報を削除する
-        </Button>
+        </ConfirmSubmitButton>
       </form>
     </div>
   );

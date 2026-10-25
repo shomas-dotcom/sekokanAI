@@ -5,7 +5,7 @@
 // (数字の範囲・文字数・件数・重複)。金額は画面から受け取らず、サーバー側でマスタの単価から計算する。
 
 import type { LaborCategory, MachineOwnership } from "@/generated/prisma/enums";
-import { LABOR_CATEGORIES, normalizeName } from "./standardMasters";
+import { LABOR_CATEGORIES, LABOR_CATEGORY_LABEL, normalizeName } from "./standardMasters";
 
 export type QuickWork = {
   key: string;
@@ -40,6 +40,8 @@ export type QuickLabor = {
   /** 1人あたりの人工数 */
   manDays: number;
   workMinutes: number | null;
+  /** 担当した作業(任意)。出面の「作業内容」に入る。未指定(undefined)なら、すでに保存してある内容を変えない。 */
+  workDescription?: string | null;
 };
 
 export type QuickKy = {
@@ -188,6 +190,7 @@ export function parseQuickPayload(json: string): ParseResult {
         headcount,
         manDays: num(o.manDays, "人工数", { min: 0.01, max: QUICK_LIMITS.maxManDays }) ?? 1,
         workMinutes: num(o.workMinutes, "作業時間", { max: QUICK_LIMITS.maxWorkMinutes, integer: true, nullable: true }),
+        workDescription: o.workDescription === undefined ? undefined : optionalStr(o.workDescription, "担当した作業"),
       } satisfies QuickLabor;
     });
 
@@ -265,6 +268,22 @@ export function dedupeQuickState(state: QuickState): QuickState {
   }
 
   return { works, machines, labor, ky };
+}
+
+// --- 労務の表示名 ---
+
+/** 氏名が空の行(外注・応援などのまとめ入力)の表示名。例: 「山田組 外注作業員(3名)」。 */
+export function derivedWorkerName(entry: {
+  workerName: string;
+  category: LaborCategory | null;
+  affiliation: string | null;
+  headcount: number;
+}): string {
+  const typed = entry.workerName.trim();
+  if (typed) return typed;
+  const label = entry.category ? LABOR_CATEGORY_LABEL[entry.category] : "作業員";
+  const base = entry.affiliation ? `${entry.affiliation} ${label}` : label;
+  return entry.headcount > 1 ? `${base}(${entry.headcount}名)` : base;
 }
 
 // --- 労務の集計 ---

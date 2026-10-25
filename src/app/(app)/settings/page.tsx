@@ -57,6 +57,21 @@ export default async function SettingsPage({
       </Card>
 
       <Card>
+        <h2 className="font-semibold text-slate-900">日報マスタ(作業内容・使用機械・労務単価・KY)</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          日報のかんたん入力に出る項目の追加・変更・並べ替えと、機械の単価・労務単価(原価の計算に使います)を管理します。
+        </p>
+        <div className="mt-3">
+          <Link
+            href="/settings/daily-report-masters"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            マスタを管理する
+          </Link>
+        </div>
+      </Card>
+
+      <Card>
         <h2 className="font-semibold text-slate-900">見積の雛形</h2>
         <p className="mt-1 text-sm text-slate-500">
           お客様提出用のExcel見積書を、御社が普段使っている書式そのままで出力できるようにします。

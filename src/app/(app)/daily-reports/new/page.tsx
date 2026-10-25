@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { NewDailyReportForm } from "./NewDailyReportForm";
-import { Card } from "@/components/ui";
+import { loadQuickMasters } from "@/lib/dailyReport/masters";
+import { todayJstDateString } from "@/lib/timesheet/time";
+import { QuickReportEditor } from "../quick/QuickReportEditor";
 
 export default async function NewDailyReportPage({
   searchParams,
@@ -11,16 +12,13 @@ export default async function NewDailyReportPage({
 }) {
   const { projectId } = await searchParams;
   const user = await requireUser();
-  const [projects, workItems] = await Promise.all([
+  const [projects, masters] = await Promise.all([
     prisma.project.findMany({
       where: { companyId: user.companyId },
       include: { customer: true },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.workItemMaster.findMany({
-      where: { companyId: user.companyId },
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    }),
+    loadQuickMasters(user),
   ]);
 
   if (projects.length === 0) {
@@ -38,17 +36,19 @@ export default async function NewDailyReportPage({
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-bold tracking-tight text-slate-900">日報を作成</h1>
-      <Card className="max-w-xl">
-        <NewDailyReportForm
-          projects={projects.map((p) => ({
-            id: p.id,
-            name: p.name,
-            customerName: p.customer.name,
-          }))}
-          workItemLabels={workItems.map((w) => w.label)}
-          defaultProjectId={projects.some((p) => p.id === projectId) ? projectId : undefined}
-        />
-      </Card>
+      <QuickReportEditor
+        mode="create"
+        projects={projects.map((p) => ({ id: p.id, name: p.name, customerName: p.customer.name }))}
+        masters={masters}
+        initial={{
+          projectId: projects.some((p) => p.id === projectId) ? (projectId as string) : "",
+          reportDate: todayJstDateString(),
+          weather: "",
+          memo: "",
+          nextDayPlan: "",
+          state: { works: [], machines: [], labor: [], ky: [] },
+        }}
+      />
     </div>
   );
 }

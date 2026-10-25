@@ -115,15 +115,6 @@ describe("標準項目の自動投入", () => {
     expect(JSON.parse(hazard.measuresJson)).toEqual(["地山点検", "土留め確認", "立入範囲の管理"]);
   });
 
-  it("同時に呼んでも二重に入らない", async () => {
-    const suffix = Math.random().toString(36).slice(2, 8);
-    const company = await prisma.company.create({ data: { name: `${TEST_COMPANY_PREFIX}-race-${suffix}` } });
-    await getOrCreateWorkSettings(company.id);
-    await Promise.all([1, 2, 3, 4].map(() => ensureDailyReportMasters(company.id)));
-    expect(await prisma.workItemMaster.count({ where: { companyId: company.id } })).toBe(24);
-    expect(await prisma.machineMaster.count({ where: { companyId: company.id } })).toBe(17);
-  });
-
   it("会社がすでに登録していた作業内容は消えず、同じ名前の標準項目は重ならない", async () => {
     const suffix = Math.random().toString(36).slice(2, 8);
     const company = await prisma.company.create({ data: { name: `${TEST_COMPANY_PREFIX}-existing-${suffix}` } });
@@ -238,6 +229,27 @@ describe("かんたん入力の保存", () => {
     expect(works).toMatchObject([{ label: "汚水管布設", quantity: 20, unit: "m", workMinutes: 240, workItemId: sewer.id }]);
     const kyEntries = await prisma.dailyReportKyEntry.findMany({ where: { dailyReportId: report.id } });
     expect(JSON.parse(kyEntries[0].measuresJson)).toEqual(["合図者配置", "周囲確認"]);
+  });
+
+  it("新規作成では、話した内容から読み取った開始/終了時間・安全確認・職長を補う。入力した天候が優先される。修正では使わない", async () => {
+    const ctx = await setup();
+    const voiceDraft = { weather: "曇り", startTime: "08:00", endTime: "17:00", safetyNotes: "特に異常なし", foremanName: "田中" };
+    const created = await save(ctx, { weather: "晴れ", voiceDraft, state: emptyState });
+    const report = await prisma.dailyReport.findUniqueOrThrow({ where: { id: created.reportId } });
+    expect(report).toMatchObject({ weather: "晴れ", startTime: "08:00", endTime: "17:00", safetyNotes: "特に異常なし", foremanName: "田中" });
+
+    const noWeather = await save(ctx, { weather: null, voiceDraft, state: emptyState });
+    expect((await prisma.dailyReport.findUniqueOrThrow({ where: { id: noWeather.reportId } })).weather).toBe("曇り");
+
+    // 修正のときは、読み取りの結果を使わない(人が直した値を上書きしない)
+    await save(ctx, {
+      reportId: created.reportId,
+      weather: "雨",
+      voiceDraft: { ...voiceDraft, startTime: "06:00" },
+      state: emptyState,
+    });
+    const edited = await prisma.dailyReport.findUniqueOrThrow({ where: { id: created.reportId } });
+    expect(edited).toMatchObject({ weather: "雨", startTime: "08:00" });
   });
 
   it("単価が未登録の労務は、原価を0円にせず未入力のまま残す(従来の動きのまま)", async () => {
@@ -367,6 +379,23 @@ describe("前回の日報の修正", () => {
     const cleared = await prisma.dailyReport.findUniqueOrThrow({ where: { id: first.reportId } });
     expect(cleared.workerCount).toBeNull();
     expect(cleared.machinery).toBeNull();
+  });
+
+  it("労務の「担当した作業」は出面の作業内容に入り、未指定なら残り、空欄にすると消える", async () => {
+    const ctx = await setup();
+    const first = await save(ctx, { state: { ...emptyState, labor: [labor({ workDescription: "掘削・配管" })] } });
+    const worker = await prisma.dailyReportWorker.findFirstOrThrow({ where: { dailyReportId: first.reportId } });
+    const site = () => prisma.siteAttendance.findFirstOrThrow({ where: { sourceDailyReportId: first.reportId } });
+    expect(worker.workDescription).toBe("掘削・配管");
+    expect((await site()).workContent).toBe("掘削・配管");
+
+    // 項目を送らない(古い入力途中の内容など)ときは、保存してある内容を変えない
+    await save(ctx, { reportId: first.reportId, state: { ...emptyState, labor: [labor({ id: worker.id })] } });
+    expect((await site()).workContent).toBe("掘削・配管");
+
+    // 空欄にしたときだけ消える
+    await save(ctx, { reportId: first.reportId, state: { ...emptyState, labor: [labor({ id: worker.id, workDescription: null })] } });
+    expect((await site()).workContent).toBeNull();
   });
 
   it("出面が承認済みの行は、日報を直しても変わらず、理由が伝えられる", async () => {

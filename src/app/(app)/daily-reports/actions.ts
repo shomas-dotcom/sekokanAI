@@ -9,7 +9,13 @@ import { draftDailyReportFromText } from "@/lib/ai";
 import { computeWorkMinutes } from "@/lib/timesheet/time";
 import { getOrCreateWorkSettings } from "@/lib/timesheet/settings";
 import { changeDailyReportDate } from "@/lib/dailyReport/changeDate";
-import { reflectDailyReportWorker, type AuditEntry } from "@/lib/dailyReport/reflectWorker";
+import { parseReportDateInput } from "@/lib/dailyReport/dateInput";
+import {
+  reflectDailyReportWorker,
+  removeMachineUsageWithExpense,
+  removeWorkerWithDerived,
+  type AuditEntry,
+} from "@/lib/dailyReport/reflectWorker";
 import type { DailyReportWorkerType } from "@/generated/prisma/enums";
 
 export type DailyReportFormState = { error?: string } | undefined;
@@ -161,19 +167,31 @@ export async function updateDailyReportAction(formData: FormData) {
   redirect(dateError ? `/daily-reports/${id}?dateError=${encodeURIComponent(dateError)}` : `/daily-reports/${id}`);
 }
 
-/** 日付の入力欄("YYYY-MM-DD")を、日報の保存と同じ形(その日のUTC 0時)に変える。形式が違えばnull。 */
-function parseReportDateInput(value: string): Date | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) return null;
-  return date;
-}
-
 export async function deleteDailyReportAction(formData: FormData) {
   const user = await requireUser();
   const id = String(formData.get("id") ?? "");
 
-  await prisma.dailyReport.deleteMany({ where: { id, companyId: user.companyId } });
+  // 日報を消すとき、そこから作られた承認前の出面・勤怠・機械の経費も一緒に整える
+  // (消した日報の人工・原価が現場別の集計に残らないように)。承認済み・締め済みのものは残す。
+  // 写真は日報と一緒に消える(画面の確認で伝えている)。
+  const settings = await getOrCreateWorkSettings(user.companyId);
+  const actor = { id: user.id, companyId: user.companyId };
+  await prisma.$transaction(
+    async (tx) => {
+      const report = await tx.dailyReport.findFirst({
+        where: { id, companyId: user.companyId },
+        include: {
+          workers: { include: { attendance: true, siteAttendance: true } },
+          machineUsages: { include: { siteExpenseEntry: true } },
+        },
+      });
+      if (!report) return;
+      for (const worker of report.workers) await removeWorkerWithDerived(tx, worker, actor, settings);
+      for (const usage of report.machineUsages) await removeMachineUsageWithExpense(tx, usage);
+      await tx.dailyReport.delete({ where: { id } });
+    },
+    { timeout: 45_000 }
+  );
   await logAction({
     companyId: user.companyId,
     userId: user.id,
@@ -183,6 +201,7 @@ export async function deleteDailyReportAction(formData: FormData) {
   });
 
   revalidatePath("/daily-reports");
+  revalidatePath("/site-attendance");
   redirect("/daily-reports");
 }
 
@@ -335,16 +354,48 @@ export async function deleteDailyReportWorkerAction(formData: FormData) {
   const report = await prisma.dailyReport.findFirst({ where: { id: dailyReportId, companyId: user.companyId } });
   if (!report) redirect("/daily-reports");
 
-  await prisma.dailyReportWorker.deleteMany({ where: { id, dailyReportId } });
+  // 作業員を消すとき、そこから作られた承認前の出面・勤怠も一緒に整える(消したはずの人工・原価が
+  // 現場別の集計に残らないように)。承認済み・締め済みのものは、これまでどおり残す。
+  const settings = await getOrCreateWorkSettings(user.companyId);
+  const actor = { id: user.id, companyId: user.companyId };
+  const removed = await prisma.$transaction(
+    async (tx) => {
+      const worker = await tx.dailyReportWorker.findFirst({
+        where: { id, dailyReportId, companyId: user.companyId },
+        include: { attendance: true, siteAttendance: true },
+      });
+      if (!worker) return null;
+      const result = await removeWorkerWithDerived(tx, worker, actor, settings);
 
-  const workerCount = await prisma.dailyReportWorker.count({ where: { dailyReportId } });
-  const foreman = await prisma.dailyReportWorker.findFirst({ where: { dailyReportId, isForeman: true } });
-  await prisma.dailyReport.update({
-    where: { id: dailyReportId },
-    data: workerCount > 0 ? { workerCount, foremanName: foreman?.workerName ?? null } : {},
-  });
+      const workers = await tx.dailyReportWorker.findMany({ where: { dailyReportId } });
+      if (workers.length > 0) {
+        const foreman = workers.find((w) => w.isForeman);
+        await tx.dailyReport.update({
+          where: { id: dailyReportId },
+          data: {
+            workerCount: workers.reduce((sum, w) => sum + w.headcount, 0),
+            foremanName: foreman?.workerName ?? null,
+          },
+        });
+      }
+      return result;
+    },
+    { timeout: 20_000 }
+  );
+  if (removed) {
+    for (const entry of removed.audit) {
+      await logAction({
+        companyId: entry.companyId,
+        userId: entry.userId,
+        action: entry.action,
+        targetType: entry.targetType,
+        targetId: entry.targetId,
+      });
+    }
+  }
 
   revalidatePath(`/daily-reports/${dailyReportId}`);
+  revalidatePath("/site-attendance");
 }
 
 /**

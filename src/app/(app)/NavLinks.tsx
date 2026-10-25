@@ -29,6 +29,7 @@ export function NavLinks({ isAdmin }: { isAdmin: boolean }) {
         ...NAV,
         { href: "/attendance-management", label: "勤怠管理" },
         { href: "/site-attendance", label: "出面・常用集計" },
+        { href: "/cost-management", label: "原価管理" },
         { href: "/settings", label: "会社設定" },
       ]
     : NAV;

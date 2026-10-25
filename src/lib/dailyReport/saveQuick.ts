@@ -2,6 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { DailyReportWorkerType } from "@/generated/prisma/enums";
 import { changeDailyReportDate } from "./changeDate";
 import {
+  derivedWorkerName,
   hasOperatorDoubleCount,
   machineAmount,
   summarizeKy,
@@ -14,8 +15,9 @@ import {
 import { LABOR_CATEGORY_LABEL } from "./standardMasters";
 import {
   reflectDailyReportWorker,
+  removeMachineUsageWithExpense,
+  removeWorkerWithDerived,
   resolveLaborUnitPrice,
-  SITE_ATTENDANCE_EDITABLE,
   type AuditEntry,
   type WorkSettings,
 } from "./reflectWorker";
@@ -46,6 +48,17 @@ export type QuickSaveInput = {
   memo: string;
   nextDayPlan: string | null;
   state: QuickState;
+  /**
+   * 新規作成のときだけ使う、話した内容から読み取った開始/終了時間・安全確認・職長・天候
+   * (従来の音声入力と同じ項目)。人が入力した天候があればそちらを優先し、空欄のものだけ補う。
+   */
+  voiceDraft?: {
+    weather: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    safetyNotes: string | null;
+    foremanName: string | null;
+  } | null;
 };
 
 export type QuickSaveResult = {
@@ -60,16 +73,6 @@ const WORKER_TYPE_BY_CATEGORY: Record<string, DailyReportWorkerType> = {
   SUBCONTRACT_WORKER: "SUBCONTRACTOR",
   SUPPORT_WORKER: "PARTNER",
 };
-
-function derivedWorkerName(
-  entry: { workerName: string; category: keyof typeof LABOR_CATEGORY_LABEL | null; affiliation: string | null; headcount: number }
-): string {
-  const typed = entry.workerName.trim();
-  if (typed) return typed;
-  const label = entry.category ? LABOR_CATEGORY_LABEL[entry.category] : "作業員";
-  const base = entry.affiliation ? `${entry.affiliation} ${label}` : label;
-  return entry.headcount > 1 ? `${base}(${entry.headcount}名)` : base;
-}
 
 export async function saveQuickReport(db: Prisma.TransactionClient, input: QuickSaveInput): Promise<QuickSaveResult> {
   const { actor, settings, state } = input;
@@ -160,12 +163,19 @@ export async function saveQuickReport(db: Prisma.TransactionClient, input: Quick
       }
     }
   } else {
+    const draft = input.voiceDraft;
     const created = await db.dailyReport.create({
       data: {
         companyId,
         projectId,
         reportDate: input.reportDate,
         ...(fields as Omit<Prisma.DailyReportUncheckedCreateInput, "companyId" | "projectId" | "reportDate">),
+        // 話した内容から読み取れた項目だけを補う(読み取れなかった項目は、推測せず空欄のまま)。
+        weather: input.weather ?? draft?.weather ?? null,
+        startTime: draft?.startTime ?? null,
+        endTime: draft?.endTime ?? null,
+        safetyNotes: draft?.safetyNotes ?? null,
+        foremanName: draft?.foremanName ?? null,
       },
     });
     reportId = created.id;
@@ -273,14 +283,7 @@ export async function saveQuickReport(db: Prisma.TransactionClient, input: Quick
   }
   for (const u of existingUsages) {
     if (keptUsageIds.has(u.id)) continue;
-    await db.dailyReportMachineUsage.delete({ where: { id: u.id } });
-    if (u.siteExpenseEntry) {
-      if (u.siteExpenseEntry.status === "DRAFT") {
-        await db.siteExpenseEntry.delete({ where: { id: u.siteExpenseEntry.id } });
-      } else {
-        warnings.push(`「${u.name}」の経費は確定済みのため残しています。`);
-      }
-    }
+    warnings.push(...(await removeMachineUsageWithExpense(db, u)));
   }
 
   // --- 6. 労務: 作業員明細(既存の仕組み)に入れ、勤怠・出面へ反映する ---
@@ -301,9 +304,16 @@ export async function saveQuickReport(db: Prisma.TransactionClient, input: Quick
       ? "EMPLOYEE"
       : ((l.category && WORKER_TYPE_BY_CATEGORY[l.category]) || current?.workerType || "MANUAL");
 
-    // 作業時間が未入力なら、1人工=会社設定の基準時間として従業員の勤怠の実働に使う(新しい行のみ)。
-    const workMinutes =
-      l.workMinutes ?? current?.workMinutes ?? (employee ? Math.round(l.manDays * settings.manDayBaseMinutes) : null);
+    // 作業時間が未入力なら、1人工=会社設定の基準時間として従業員の勤怠の実働に使う。
+    // 前回の保存でこの方法で入れた時間は、人工数を直したときに計算し直す(人が入力した時間は変えない)。
+    const baseMinutes = (days: number) => Math.round(days * settings.manDayBaseMinutes);
+    const wasDerived =
+      current != null && current.workMinutes != null && current.manDays != null && current.workMinutes === baseMinutes(current.manDays);
+    let workMinutes: number | null = l.workMinutes;
+    if (workMinutes == null) {
+      if (current && !wasDerived) workMinutes = current.workMinutes;
+      else if (employee) workMinutes = baseMinutes(l.manDays);
+    }
     const isForeman = firstForemanKey ? l.key === firstForemanKey : (current?.isForeman ?? false);
 
     const workerData = {
@@ -314,6 +324,8 @@ export async function saveQuickReport(db: Prisma.TransactionClient, input: Quick
       affiliation: l.affiliation,
       headcount: l.headcount,
       manDays: l.manDays,
+      // 未指定(古い入力途中の内容など)のときは、保存してある内容を変えない。空欄にしたときだけ消す。
+      workDescription: l.workDescription === undefined ? (current?.workDescription ?? null) : l.workDescription,
       workMinutes,
       isForeman,
       sortOrder: i,
@@ -342,25 +354,9 @@ export async function saveQuickReport(db: Prisma.TransactionClient, input: Quick
 
   for (const w of existingWorkers) {
     if (keptWorkerIds.has(w.id)) continue;
-    await db.dailyReportWorker.delete({ where: { id: w.id } });
-    if (w.siteAttendance) {
-      if (SITE_ATTENDANCE_EDITABLE.includes(w.siteAttendance.status)) {
-        await db.siteAttendance.delete({ where: { id: w.siteAttendance.id } });
-      } else {
-        warnings.push(`「${w.workerName}」の出面は承認済み・締め済みのため残しています。`);
-      }
-    }
-    if (w.attendance && (w.attendance.status === "DRAFT" || w.attendance.status === "REJECTED")) {
-      const remaining = await db.dailyReportWorker.findFirst({
-        where: { attendanceId: w.attendance.id, reflectToAttendance: true },
-      });
-      if (remaining) {
-        // 同じ日の別の日報にも入っている人: 残りの分から勤怠を計算し直す。
-        audit.push(...(await reflectDailyReportWorker(db, remaining.id, actor, settings)));
-      } else {
-        await db.attendance.delete({ where: { id: w.attendance.id } });
-      }
-    }
+    const removed = await removeWorkerWithDerived(db, w, actor, settings);
+    warnings.push(...removed.warnings);
+    audit.push(...removed.audit);
   }
 
   // 作業員数・職長を、既存の項目(PDF・Excelの表示用)へそろえる。
