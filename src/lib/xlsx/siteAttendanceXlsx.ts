@@ -23,6 +23,8 @@ export type SiteAttendanceXlsxExpenseRow = {
   quantity: number;
   unitPrice: number | null;
   amount: number | null;
+  /** 請求に含める経費か。falseは自社の原価だけ(日報かんたん入力の機械費)で、請求の合計には足さない。 */
+  isBillable?: boolean;
 };
 
 /** 出面集計表(REQUIREMENTS.md/依頼書のフェーズ8)。金額を含むため管理者専用の呼び出しとすること。 */
@@ -102,14 +104,17 @@ export async function buildSiteAttendanceXlsx(params: {
   }
 
   ws.addRow([]);
-  const expenseHeaders = ["現場名", "日付", "区分", "名称", "数量", "単価", "金額"];
+  const expenseHeaders = ["現場名", "日付", "区分", "名称", "数量", "単価", "金額", "請求の扱い"];
   const expenseHeaderRow = ws.addRow(expenseHeaders);
   expenseHeaderRow.font = { bold: true };
   expenseHeaderRow.eachCell((cell) => (cell.border = { bottom: { style: "thin" } }));
 
   let expenseTotal = 0;
+  let billableExpenseTotal = 0;
   for (const r of params.expenseRows) {
+    const billable = r.isBillable !== false;
     expenseTotal += r.amount ?? 0;
+    if (billable) billableExpenseTotal += r.amount ?? 0;
     ws.addRow([
       r.projectName,
       `${r.targetDate.getUTCMonth() + 1}/${r.targetDate.getUTCDate()}`,
@@ -118,13 +123,22 @@ export async function buildSiteAttendanceXlsx(params: {
       r.quantity,
       r.unitPrice ?? "",
       r.amount ?? "",
+      billable ? "請求に含める" : "原価のみ(請求に足さない)",
     ]);
   }
   const expenseTotalRow = ws.addRow(["", "", "", "", "", "車両・重機・経費 合計", expenseTotal]);
   expenseTotalRow.font = { bold: true };
 
   ws.addRow([]);
-  const grandTotalRow = ws.addRow(["", "", "", "", "", "月間合計(請求金額+車両重機経費)", laborTotal + expenseTotal]);
+  const grandTotalRow = ws.addRow([
+    "",
+    "",
+    "",
+    "",
+    "",
+    "月間合計(請求金額+請求に含める車両重機経費)",
+    laborTotal + billableExpenseTotal,
+  ]);
   grandTotalRow.font = { bold: true };
   grandTotalRow.eachCell((cell) => (cell.border = { top: { style: "double" } }));
 

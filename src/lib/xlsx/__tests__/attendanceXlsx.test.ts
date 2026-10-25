@@ -122,4 +122,40 @@ describe("buildSiteAttendanceXlsx", () => {
     expect(values).toContain("単価未入力があるため計算しません");
     expect(values.some((v) => v.includes("原価 1件"))).toBe(true);
   });
+
+  it("原価だけの経費(日報かんたん入力の機械費)は、請求の月間合計に足さない", async () => {
+    const buffer = await buildSiteAttendanceXlsx({
+      companyName: "杉本土木株式会社",
+      periodLabel: "2026年10月",
+      laborRows: [
+        {
+          primeContractorName: null,
+          projectName: "現場",
+          targetDate: new Date(Date.UTC(2026, 9, 1)),
+          workerName: "田中",
+          jobType: null,
+          workContent: null,
+          manDays: 1,
+          isBillable: true,
+          isCostTarget: true,
+          manDayUnitPrice: 20000,
+          laborCostUnitPrice: 15000,
+        },
+      ],
+      expenseRows: [
+        { projectName: "現場", targetDate: new Date(Date.UTC(2026, 9, 1)), category: "重機", name: "請求する重機", quantity: 1, unitPrice: 10000, amount: 10000 },
+        { projectName: "現場", targetDate: new Date(Date.UTC(2026, 9, 1)), category: "重機", name: "原価だけの機械", quantity: 1, unitPrice: 45000, amount: 45000, isBillable: false },
+      ],
+    });
+    const wb = new ExcelJS.Workbook();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await wb.xlsx.load(buffer as any);
+    const rows: Record<string, string> = {};
+    wb.getWorksheet("出面集計表")!.eachRow((row) => {
+      const label = row.getCell(6).value?.toString() ?? "";
+      if (label.includes("合計")) rows[label] = row.getCell(7).value?.toString() ?? "";
+    });
+    expect(rows["車両・重機・経費 合計"]).toBe("55000"); // 経費はすべて並べて見せる
+    expect(rows["月間合計(請求金額+請求に含める車両重機経費)"]).toBe("30000"); // 20,000 + 請求する10,000(原価の45,000は足さない)
+  });
 });

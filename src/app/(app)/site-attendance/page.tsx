@@ -129,6 +129,8 @@ export default async function SiteAttendancePage({
     groups.set(key, g);
   }
   const expenseTotal = expenses.reduce((sum, e) => sum + (e.amount ?? 0), 0);
+  // 請求に含める経費だけ(日報かんたん入力の機械費は自社の原価なので、請求の合計には混ぜない)。
+  const billableExpenseTotal = expenses.filter((e) => e.isBillable).reduce((sum, e) => sum + (e.amount ?? 0), 0);
   const vehicleTotalByProject = new Map<string, number>();
   for (const e of expenses) {
     vehicleTotalByProject.set(e.project.name, (vehicleTotalByProject.get(e.project.name) ?? 0) + (e.amount ?? 0));
@@ -233,8 +235,10 @@ export default async function SiteAttendancePage({
               </p>
             )}
             <p>
-              車両・重機・経費(月間合計): {expenseTotal.toLocaleString("ja-JP")}円 / 合計金額(請求予定額+車両重機経費):{" "}
-              {(overall.billing + expenseTotal).toLocaleString("ja-JP")}円
+              車両・重機・経費(月間合計): {expenseTotal.toLocaleString("ja-JP")}円
+              {billableExpenseTotal !== expenseTotal && `(うち請求に含める分 ${billableExpenseTotal.toLocaleString("ja-JP")}円)`}
+              {" / "}合計金額(請求予定額+請求に含める車両重機経費):{" "}
+              {(overall.billing + billableExpenseTotal).toLocaleString("ja-JP")}円
             </p>
           </div>
         )}

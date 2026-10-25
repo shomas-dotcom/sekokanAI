@@ -200,7 +200,8 @@ export default async function SiteAttendanceReviewPage({ params }: { params: Pro
                 <span>
                   {categoryLabel[e.category] ?? e.category} / {e.name} / {e.quantity}
                 </span>
-                <span>{e.amount != null ? `${e.amount.toLocaleString("ja-JP")}円` : "—"}</span>
+                {/* 機械の金額は自社の原価のため、管理者だけに見せる(現場責任者には名称・数量のみ)。 */}
+                {user.role === "ADMIN" && <span>{e.amount != null ? `${e.amount.toLocaleString("ja-JP")}円` : "—"}</span>}
               </li>
             ))}
           </ul>

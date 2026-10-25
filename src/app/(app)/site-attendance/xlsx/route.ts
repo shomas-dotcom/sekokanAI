@@ -70,6 +70,7 @@ export async function GET(request: Request) {
       quantity: e.quantity,
       unitPrice: e.unitPrice,
       amount: e.amount,
+      isBillable: e.isBillable,
     })),
   });
 
