@@ -14,6 +14,7 @@ import {
   mergeWorkIntervals,
 } from "@/lib/timesheet/time";
 import { getOrCreateWorkSettings } from "@/lib/timesheet/settings";
+import { changeDailyReportDate } from "@/lib/dailyReport/changeDate";
 import type { DailyReportWorkerType } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -105,32 +106,47 @@ export async function updateDailyReportAction(formData: FormData) {
   const breakMinutesStr = String(formData.get("breakMinutes") ?? "").trim();
   const overtimeMinutesStr = String(formData.get("overtimeMinutes") ?? "").trim();
 
-  await prisma.dailyReport.update({
-    where: { id },
-    data: {
-      weather: String(formData.get("weather") ?? "").trim() || null,
-      workerCount: workerCountStr ? Number(workerCountStr) : null,
-      workContent: String(formData.get("workContent") ?? "").trim() || null,
-      machinery: String(formData.get("machinery") ?? "").trim() || null,
-      quantityWorked: String(formData.get("quantityWorked") ?? "").trim() || null,
-      safetyNotes: String(formData.get("safetyNotes") ?? "").trim() || null,
-      issues: String(formData.get("issues") ?? "").trim() || null,
-      nextDayPlan: String(formData.get("nextDayPlan") ?? "").trim() || null,
-      foremanName: String(formData.get("foremanName") ?? "").trim() || null,
-      vehicles: String(formData.get("vehicles") ?? "").trim() || null,
-      materials: String(formData.get("materials") ?? "").trim() || null,
-      subcontractors: String(formData.get("subcontractors") ?? "").trim() || null,
-      startTime: String(formData.get("startTime") ?? "").trim() || null,
-      endTime: String(formData.get("endTime") ?? "").trim() || null,
-      breakMinutes: breakMinutesStr ? Number(breakMinutesStr) : null,
-      overtimeMinutes: overtimeMinutesStr ? Number(overtimeMinutesStr) : null,
-      dangerPrediction: String(formData.get("dangerPrediction") ?? "").trim() || null,
-      remarks: String(formData.get("remarks") ?? "").trim() || null,
-      capturedAddress: String(formData.get("capturedAddress") ?? "").trim() || null,
-      // 人間が内容を確認・保存した時点で確認候補は解消したとみなす
-      unclearItemsJson: null,
+  // 日付の変更(空欄・今の日付と同じなら変更なし)。形式が正しくないときは日付だけ変えず、理由を画面に出す。
+  const reportDateStr = String(formData.get("reportDate") ?? "").trim();
+  const newReportDate = parseReportDateInput(reportDateStr);
+  let dateError: string | null =
+    reportDateStr && !newReportDate ? "日付の形式が正しくありません。もう一度選び直してください。" : null;
+
+  const dateResult = await prisma.$transaction(
+    async (tx) => {
+      await tx.dailyReport.update({
+        where: { id },
+        data: {
+          weather: String(formData.get("weather") ?? "").trim() || null,
+          workerCount: workerCountStr ? Number(workerCountStr) : null,
+          workContent: String(formData.get("workContent") ?? "").trim() || null,
+          machinery: String(formData.get("machinery") ?? "").trim() || null,
+          quantityWorked: String(formData.get("quantityWorked") ?? "").trim() || null,
+          safetyNotes: String(formData.get("safetyNotes") ?? "").trim() || null,
+          issues: String(formData.get("issues") ?? "").trim() || null,
+          nextDayPlan: String(formData.get("nextDayPlan") ?? "").trim() || null,
+          foremanName: String(formData.get("foremanName") ?? "").trim() || null,
+          vehicles: String(formData.get("vehicles") ?? "").trim() || null,
+          materials: String(formData.get("materials") ?? "").trim() || null,
+          subcontractors: String(formData.get("subcontractors") ?? "").trim() || null,
+          startTime: String(formData.get("startTime") ?? "").trim() || null,
+          endTime: String(formData.get("endTime") ?? "").trim() || null,
+          breakMinutes: breakMinutesStr ? Number(breakMinutesStr) : null,
+          overtimeMinutes: overtimeMinutesStr ? Number(overtimeMinutesStr) : null,
+          dangerPrediction: String(formData.get("dangerPrediction") ?? "").trim() || null,
+          remarks: String(formData.get("remarks") ?? "").trim() || null,
+          capturedAddress: String(formData.get("capturedAddress") ?? "").trim() || null,
+          // 人間が内容を確認・保存した時点で確認候補は解消したとみなす
+          unclearItemsJson: null,
+        },
+      });
+      if (!newReportDate) return null;
+      // 動かせないものがあれば日付は変えず(他の項目は上で保存済み)、理由だけを返す。
+      return changeDailyReportDate(tx, { dailyReportId: id, companyId: user.companyId, newDate: newReportDate });
     },
-  });
+    { timeout: 20_000 }
+  );
+  if (dateResult && !dateResult.ok) dateError = dateResult.error;
 
   await logAction({
     companyId: user.companyId,
@@ -139,9 +155,27 @@ export async function updateDailyReportAction(formData: FormData) {
     targetType: "DailyReport",
     targetId: id,
   });
+  if (dateResult?.ok && dateResult.changed) {
+    await logAction({
+      companyId: user.companyId,
+      userId: user.id,
+      action: "dailyReport.changeDate",
+      targetType: "DailyReport",
+      targetId: id,
+    });
+  }
 
   revalidatePath(`/daily-reports/${id}`);
-  redirect(`/daily-reports/${id}`);
+  revalidatePath("/daily-reports");
+  redirect(dateError ? `/daily-reports/${id}?dateError=${encodeURIComponent(dateError)}` : `/daily-reports/${id}`);
+}
+
+/** 日付の入力欄("YYYY-MM-DD")を、日報の保存と同じ形(その日のUTC 0時)に変える。形式が違えばnull。 */
+function parseReportDateInput(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) return null;
+  return date;
 }
 
 export async function deleteDailyReportAction(formData: FormData) {

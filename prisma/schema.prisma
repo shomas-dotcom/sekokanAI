@@ -109,6 +109,11 @@ model Company {
   siteExpenseEntries        SiteExpenseEntry[]
   timesheetChangeLogs       TimesheetChangeLog[]
   dailyReportWorkers        DailyReportWorker[]
+  // 日報かんたん入力(2026-10追記): 会社ごとの機械・労務単価・KYのマスタ
+  machineMasters            MachineMaster[]
+  laborCategoryRates        LaborCategoryRate[]
+  employeeLaborRates        EmployeeLaborRate[]
+  kyHazardMasters           KyHazardMaster[]
 }
 
 // Stripe Webhookで受け取ったイベントの記録。同一イベントの二重処理を防ぎ(冪等性)、
@@ -252,6 +257,7 @@ model Employee {
   attendances    Attendance[]
   siteAttendances SiteAttendance[]
   dailyReportWorkers DailyReportWorker[]
+  laborRate          EmployeeLaborRate?
   // 1人の従業員につき、有効な(退会していない)利用者アカウントは同時に1つまでに限定する。
   // 退会後も過去の勤怠記録からは辿れるよう、DB上のunique制約ではなくアプリ側(User作成/更新時)
   // で検証する(退会済みUserのemployeeIdは残したままにするため)。
@@ -747,6 +753,11 @@ model DailyReport {
   workTypeEntries    DailyReportWorkTypeEntry[]
   materialEntries    DailyReportMaterialEntry[]
   machineryEntries   DailyReportMachineryEntry[]
+  // かんたん入力(4タブ)の選択内容。作業内容・使用機械・危険予知(KY)の明細。
+  // 労務は既存のworkers(DailyReportWorker)にそのまま入れる。
+  workEntries        DailyReportWorkEntry[]
+  machineUsages      DailyReportMachineUsage[]
+  kyEntries          DailyReportKyEntry[]
 
   @@index([companyId])
   @@index([projectId])
@@ -904,10 +915,162 @@ model WorkItemMaster {
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   label     String
   sortOrder Int      @default(0)
+  // 2026-10追記(日報かんたん入力)。既存の行は有効・お気に入りなしの扱いになる。
+  isActive    Boolean @default(true) // 無効にすると入力画面に出ない(過去の日報の表示は変わらない)
+  isFavorite  Boolean @default(false) // 入力画面の先頭に出す
+  defaultUnit String? // 数量の単位の初期値(例: "m")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  workEntries DailyReportWorkEntry[]
 
   @@index([companyId])
+}
+
+// --- 日報かんたん入力(2026-10追記) ---
+// 現場の人が iPhone から1分程度で日報を作れるよう、作業内容・使用機械・労務・KYを
+// タップで選べるようにする。選んだ内容は下の明細テーブルに保存し、既存の日報の文章欄
+// (workContent等)にも要約を書き込む(PDF・Excel・既存画面をそのまま使い続けるため)。
+// 追加するのは新しい列・新しい表のみで、既存データは変更しない。
+
+enum MachineOwnership {
+  OWN // 自社所有
+  RENTAL // レンタル
+}
+
+enum MachinePriceUnit {
+  DAY // 1日あたり
+  HOUR // 1時間あたり
+}
+
+// 労務の区分。単価は区分ごと(LaborCategoryRate)・従業員ごと(EmployeeLaborRate)に登録できる。
+enum LaborCategory {
+  OWN_EMPLOYEE // 自社社員
+  FOREMAN // 職長
+  OPERATOR // 重機オペレーター
+  SUBCONTRACT_WORKER // 外注作業員
+  SUPPORT_WORKER // 応援作業員
+  OTHER // その他
+}
+
+// 使用機械マスタ。単価(原価)は取引の機微情報のため、登録・閲覧は管理者のみ。
+// 単価が未登録(null)の機械は金額を出さず「単価未登録」として扱う(単価を勝手に決めない)。
+model MachineMaster {
+  id               String           @id @default(cuid())
+  companyId        String
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name             String
+  ownership        MachineOwnership @default(OWN) // 入力時の初期値(日報ごとに変えられる)
+  unitPrice        Int? // 原価単価(円)。priceUnitの単位あたり
+  priceUnit        MachinePriceUnit @default(DAY)
+  // 運転手込みの単価か。trueの機械に重機オペレーターの人工を足すと二重計上になるため、画面で注意を出す。
+  includesOperator Boolean          @default(false)
+  isActive         Boolean          @default(true)
+  isFavorite       Boolean          @default(false)
+  sortOrder        Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  usages           DailyReportMachineUsage[]
+
+  @@index([companyId])
+}
+
+// 区分ごとの労務単価(1人工あたり・円)。管理者のみ登録・閲覧できる。
+model LaborCategoryRate {
+  id             String        @id @default(cuid())
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category       LaborCategory
+  dailyUnitPrice Int
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([companyId, category])
+}
+
+// 従業員ごとの労務単価(1人工あたり・円)。区分ごとの単価より優先する。管理者のみ登録・閲覧できる。
+model EmployeeLaborRate {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId     String   @unique
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  dailyUnitPrice Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+// 危険予知(KY)マスタ。危険のラベルと、その対策の候補(JSON文字列の配列)を持つ。
+model KyHazardMaster {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  label        String
+  measuresJson String   @default("[]") // 対策候補。例: ["作業半径内立入禁止","合図者配置"]
+  isActive     Boolean  @default(true)
+  isFavorite   Boolean  @default(false)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  kyEntries    DailyReportKyEntry[]
+
+  @@index([companyId])
+}
+
+// 日報に選んだ作業内容。labelは選んだ時点の名前(マスタを後から直しても過去の日報は変わらない)。
+model DailyReportWorkEntry {
+  id            String          @id @default(cuid())
+  dailyReportId String
+  dailyReport   DailyReport     @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  workItemId    String?
+  workItem      WorkItemMaster? @relation(fields: [workItemId], references: [id], onDelete: SetNull)
+  label         String
+  quantity      Float? // 施工数量
+  unit          String? // 単位(m, ㎡, ㎥, 箇所, 枚, 本 など)
+  workMinutes   Int? // 作業時間(分)
+  remarks       String?
+  sortOrder     Int             @default(0)
+
+  @@index([dailyReportId])
+}
+
+// 日報に選んだ使用機械。単価・金額は保存時点の値を残す(後から単価を直しても過去の日報は変わらない)。
+// 金額は、既存の経費(SiteExpenseEntry)にも同じ内容で書き込み、現場別の原価集計に入れる。
+model DailyReportMachineUsage {
+  id                 String           @id @default(cuid())
+  dailyReportId      String
+  dailyReport        DailyReport      @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  machineId          String?
+  machine            MachineMaster?   @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  name               String
+  ownership          MachineOwnership @default(OWN)
+  quantity           Float            @default(1) // 台数
+  usageValue         Float            @default(1) // 使用日数または使用時間(priceUnitに従う)
+  priceUnit          MachinePriceUnit @default(DAY)
+  includesOperator   Boolean          @default(false)
+  unitPrice          Int? // 保存時点の単価
+  amount             Int? // 台数 × 使用日数(時間) × 単価
+  siteExpenseEntryId String?          @unique
+  siteExpenseEntry   SiteExpenseEntry? @relation(fields: [siteExpenseEntryId], references: [id], onDelete: SetNull)
+  sortOrder          Int              @default(0)
+
+  @@index([dailyReportId])
+}
+
+// 日報に選んだ危険予知(KY)。選んだ対策はJSON文字列の配列で持つ(AIの提案を自動確定しない:
+// 人が選んだ・入力したものだけが入る)。
+model DailyReportKyEntry {
+  id            String          @id @default(cuid())
+  dailyReportId String
+  dailyReport   DailyReport     @relation(fields: [dailyReportId], references: [id], onDelete: Cascade)
+  hazardId      String?
+  hazard        KyHazardMaster? @relation(fields: [hazardId], references: [id], onDelete: SetNull)
+  label         String
+  measuresJson  String          @default("[]")
+  sortOrder     Int             @default(0)
+
+  @@index([dailyReportId])
 }
 
 enum PlanSectionStatus {
@@ -1311,6 +1474,10 @@ model CompanyWorkSettings {
   timeRounding                        TimeRoundingUnit   @default(NONE)
   amountRoundingMode                  RoundingMode       @default(ROUND)
   maxManDaysPerDay                    Float? // 1人1日あたりの人工数上限(警告用。任意)
+  // 2026-10追記(日報かんたん入力)。1人工とみなす作業時間(分)。所定労働時間(残業の計算に使う)とは別に持つ。
+  manDayBaseMinutes                   Int                @default(480)
+  // 作業内容・機械・KYの標準項目を入れた日時。nullなら未投入。入れたあとに会社が消した項目は復活させない。
+  dailyMastersSeededAt                DateTime?
   autoCreateAttendanceFromDailyReport Boolean            @default(true)
   attendanceApprovalRequired          Boolean            @default(true)
   siteAttendanceApprovalRequired      Boolean            @default(true)
@@ -1478,6 +1645,8 @@ model SiteExpenseEntry {
   sourceDailyReport   DailyReport?        @relation(fields: [sourceDailyReportId], references: [id], onDelete: SetNull)
   rateMasterItemId    String? // 単価マスタ参照(任意。既存のRateMasterItemを流用し、新規マスタは作らない)
   rateMasterItem      RateMasterItem?     @relation(fields: [rateMasterItemId], references: [id], onDelete: SetNull)
+  // かんたん入力の「使用機械」から作られた場合の元の明細(1:1)。日報を直すとこの経費も同期して直る。
+  machineUsage        DailyReportMachineUsage?
   category            SiteExpenseCategory
   name                String
   quantity            Float               @default(1) // 台数・常用数量
@@ -1572,8 +1741,12 @@ model DailyReportWorker {
   breakMinutes      Int?
   workMinutes       Int?
   overtimeMinutes   Int?
-  manDays           Float?
+  manDays           Float? // 1人あたりの人工数(headcountが2以上なら、全員が同じ人工数)
   workDescription   String?
+  // 2026-10追記(日報かんたん入力)。既存の行は区分なし・所属なし・1名の扱いになる。
+  laborCategory     LaborCategory? // 労務の区分(単価の引き当てに使う)
+  affiliation       String? // 所属会社(外注・応援など)
+  headcount         Int                   @default(1) // 人数。2以上は従業員を指定しない外注・応援等のまとめ入力
   isBillable        Boolean               @default(true)
   isForeman         Boolean               @default(false) // 職長。1日報につき1人までをアプリ側で担保する
   reflectToAttendance     Boolean         @default(true) // 勤怠へ反映するか

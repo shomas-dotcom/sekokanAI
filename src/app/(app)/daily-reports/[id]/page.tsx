@@ -23,10 +23,13 @@ const WORKER_TYPE_LABEL: Record<string, string> = {
 
 export default async function DailyReportDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ dateError?: string }>;
 }) {
   const { id } = await params;
+  const { dateError } = await searchParams;
   const user = await requireUser();
 
   const [report, employees, availableTemplates] = await Promise.all([
@@ -150,6 +153,14 @@ export default async function DailyReportDetailPage({
         </form>
       )}
 
+      {dateError && (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+          <p className="font-semibold">日付は変更できませんでした</p>
+          <p className="mt-1">{dateError.slice(0, 200)}</p>
+          <p className="mt-1 text-xs text-rose-700">日付以外の内容は保存されています。</p>
+        </div>
+      )}
+
       {unclearItems.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
           <p className="font-semibold text-amber-800">確認が必要な項目({unclearItems.length}件)</p>
@@ -185,6 +196,9 @@ export default async function DailyReportDetailPage({
         <form action={updateDailyReportAction} className="flex flex-col gap-4">
           <input type="hidden" name="id" value={report.id} />
 
+          <FieldLabel label="日付(間違えたときはここで直せます)">
+            <Input name="reportDate" type="date" required defaultValue={report.reportDate.toISOString().slice(0, 10)} />
+          </FieldLabel>
           <FieldLabel label="天候">
             <Input name="weather" defaultValue={report.weather ?? ""} />
           </FieldLabel>
