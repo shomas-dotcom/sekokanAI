@@ -6,20 +6,11 @@ import { requireUser, requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { draftDailyReportFromText } from "@/lib/ai";
-import {
-  jstWallTimeToUtc,
-  computeWorkMinutes,
-  computeAttendanceBreakdown,
-  computeNightShiftMinutes,
-  mergeWorkIntervals,
-} from "@/lib/timesheet/time";
+import { computeWorkMinutes } from "@/lib/timesheet/time";
 import { getOrCreateWorkSettings } from "@/lib/timesheet/settings";
 import { changeDailyReportDate } from "@/lib/dailyReport/changeDate";
+import { reflectDailyReportWorker, type AuditEntry } from "@/lib/dailyReport/reflectWorker";
 import type { DailyReportWorkerType } from "@/generated/prisma/enums";
-import type { Prisma } from "@/generated/prisma/client";
-
-type WorkSettings = Awaited<ReturnType<typeof getOrCreateWorkSettings>>;
-type AuditEntry = { companyId: string; userId: string; action: string; targetType: string; targetId: string };
 
 export type DailyReportFormState = { error?: string } | undefined;
 
@@ -197,9 +188,6 @@ export async function deleteDailyReportAction(formData: FormData) {
 
 const WORKER_TYPES: DailyReportWorkerType[] = ["EMPLOYEE", "PARTNER", "SUBCONTRACTOR", "MANUAL"];
 
-// 同じ日の日報どうしで作業時間が重なったとき、勤怠の備考に付ける印(合算せず確認を促す)。
-const OVERLAP_REMARK = "【要確認】同じ日の別の日報と作業時間が重なっています。時間を確認してください。";
-
 /**
  * 日報の作業員明細を追加する(自社従業員はマスタから選択、協力会社・外注・手入力は
  * 直接入力)。既存の「作業員数」「職長」は削除せず、明細からここで自動計算して同期する
@@ -357,184 +345,6 @@ export async function deleteDailyReportWorkerAction(formData: FormData) {
   });
 
   revalidatePath(`/daily-reports/${dailyReportId}`);
-}
-
-/**
- * 作業員明細を勤怠(自社従業員のみ・従業員×日付で1件)・出面(全種別、明細ごとに1件)へ反映する。
- * 反映先がすでに承認済み(APPROVED)・締め済み(CLOSED)の場合は上書きしない
- * (給与・請求の確定後に日報の修正で勝手に変わらないようにするため)。
- *
- * 作業員明細の作成と同じ保存単位(トランザクション)の中で呼ぶ。途中で失敗したら明細・勤怠・出面の
- * すべてが保存されない(一部だけ保存されて再送で重複する、を防ぐ。調査報告F08)。
- * 操作ログは保存確定後に書くため、書くべき内容を戻り値で返す。
- */
-async function reflectDailyReportWorker(
-  db: Prisma.TransactionClient,
-  workerId: string,
-  actor: { id: string; companyId: string },
-  settings: WorkSettings
-): Promise<AuditEntry[]> {
-  const audit: AuditEntry[] = [];
-  const worker = await db.dailyReportWorker.findUnique({
-    where: { id: workerId },
-    include: { dailyReport: true },
-  });
-  if (!worker) return audit;
-
-  const clockIn = worker.startTime ? jstWallTimeToUtc(worker.dailyReport.reportDate, worker.startTime) : null;
-  const clockOut = worker.endTime ? jstWallTimeToUtc(worker.dailyReport.reportDate, worker.endTime) : null;
-
-  if (worker.reflectToAttendance && worker.employeeId) {
-    // 日報からの反映では休日出勤・有給等の区分までは分からないため、いったん通常勤務として
-    // 普通/残業時間を計算する(区分の修正は勤怠の確認・承認画面で行う想定)。
-    const breakdown = computeAttendanceBreakdown({
-      actualWorkMinutes: worker.workMinutes,
-      workCategory: "NORMAL",
-      scheduledWorkMinutes: settings.scheduledWorkMinutes,
-    });
-    const nightShiftMinutes = computeNightShiftMinutes(
-      clockIn,
-      clockOut,
-      settings.nightShiftStartTime,
-      settings.nightShiftEndTime
-    );
-
-    const existing = await db.attendance.findUnique({
-      where: { employeeId_targetDate: { employeeId: worker.employeeId, targetDate: worker.dailyReport.reportDate } },
-    });
-    if (!existing) {
-      const created = await db.attendance.create({
-        data: {
-          companyId: actor.companyId,
-          employeeId: worker.employeeId,
-          targetDate: worker.dailyReport.reportDate,
-          sourceDailyReportId: worker.dailyReportId,
-          clockInTime: clockIn,
-          clockOutTime: clockOut,
-          siteArrivalTime: clockIn,
-          siteDepartureTime: clockOut,
-          breakMinutes: worker.breakMinutes ?? 0,
-          actualWorkMinutes: worker.workMinutes,
-          normalWorkMinutes: breakdown.normalWorkMinutes,
-          overtimeMinutes: breakdown.overtimeMinutes,
-          nightShiftMinutes,
-          createdByUserId: actor.id,
-        },
-      });
-      await db.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: created.id } });
-      audit.push({
-        companyId: actor.companyId,
-        userId: actor.id,
-        action: "attendance.create",
-        targetType: "Attendance",
-        targetId: created.id,
-      });
-    } else if (existing.status === "DRAFT" || existing.status === "REJECTED") {
-      // 同じ人が同じ日に別の現場の日報にも出ている場合、その分とまとめて1日分を計算し直す
-      // (以前は後から反映した現場の時間で上書きしており、3時間+4時間が4時間になっていた)。
-      const alreadyLinked = await db.dailyReportWorker.findMany({
-        where: { attendanceId: existing.id, reflectToAttendance: true, id: { not: worker.id } },
-        include: { dailyReport: { select: { reportDate: true } } },
-      });
-      const sameDayWorkers = [...alreadyLinked, worker];
-      const intervals = sameDayWorkers.map((w) => ({
-        start: w.startTime ? jstWallTimeToUtc(w.dailyReport.reportDate, w.startTime) : null,
-        end: w.endTime ? jstWallTimeToUtc(w.dailyReport.reportDate, w.endTime) : null,
-        breakMinutes: w.breakMinutes ?? 0,
-        workMinutes: w.workMinutes,
-      }));
-      const merged = mergeWorkIntervals(intervals);
-
-      if (merged.overlaps) {
-        // 時間帯が重なる = 二重登録か入力誤りのおそれ。合算も上書きもせず、備考で確認を促す
-        // (勤怠は下書きのまま残り、本人・管理者が確認画面で直す)。
-        const remarks = existing.remarks?.includes(OVERLAP_REMARK)
-          ? existing.remarks
-          : [OVERLAP_REMARK, existing.remarks].filter(Boolean).join("\n");
-        await db.attendance.update({
-          where: { id: existing.id },
-          data: { remarks, updatedByUserId: actor.id },
-        });
-      } else {
-        const mergedBreakdown = computeAttendanceBreakdown({
-          actualWorkMinutes: merged.workMinutes,
-          workCategory: "NORMAL",
-          scheduledWorkMinutes: settings.scheduledWorkMinutes,
-        });
-        const nightPerInterval = intervals.map((i) =>
-          computeNightShiftMinutes(i.start, i.end, settings.nightShiftStartTime, settings.nightShiftEndTime)
-        );
-        const mergedNight = nightPerInterval.every((n) => n == null)
-          ? null
-          : nightPerInterval.reduce<number>((sum, n) => sum + (n ?? 0), 0);
-
-        await db.attendance.update({
-          where: { id: existing.id },
-          data: {
-            sourceDailyReportId: worker.dailyReportId,
-            clockInTime: merged.clockIn ?? existing.clockInTime,
-            clockOutTime: merged.clockOut ?? existing.clockOutTime,
-            normalWorkMinutes: mergedBreakdown.normalWorkMinutes ?? existing.normalWorkMinutes,
-            overtimeMinutes: mergedBreakdown.overtimeMinutes ?? existing.overtimeMinutes,
-            nightShiftMinutes: mergedNight ?? existing.nightShiftMinutes,
-            siteArrivalTime: merged.clockIn ?? existing.siteArrivalTime,
-            siteDepartureTime: merged.clockOut ?? existing.siteDepartureTime,
-            breakMinutes: merged.breakMinutes,
-            actualWorkMinutes: merged.workMinutes ?? existing.actualWorkMinutes,
-            updatedByUserId: actor.id,
-          },
-        });
-      }
-      await db.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
-      audit.push({
-        companyId: actor.companyId,
-        userId: actor.id,
-        action: "attendance.update",
-        targetType: "Attendance",
-        targetId: existing.id,
-      });
-    } else {
-      // 承認済み・締め済み: 上書きしない。表示用にリンクだけ張る(画面側で「反映済み(承認済み)」等と示す)
-      await db.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
-    }
-  }
-
-  if (worker.reflectToSiteAttendance) {
-    // 出面には勤怠のような「本人が見直して提出する」自己申告画面がなく、日報を保存した
-    // 時点で内容は確認済みとみなせるため、下書きを経由せず提出済みとして作成する
-    // (管理者がsite-attendance画面で承認・差し戻しを行う)。
-    const created = await db.siteAttendance.create({
-      data: {
-        companyId: actor.companyId,
-        targetDate: worker.dailyReport.reportDate,
-        projectId: worker.dailyReport.projectId,
-        sourceDailyReportId: worker.dailyReportId,
-        employeeId: worker.employeeId,
-        workerName: worker.workerName,
-        jobType: worker.role,
-        workContent: worker.workDescription,
-        startTime: clockIn,
-        endTime: clockOut,
-        breakMinutes: worker.breakMinutes ?? 0,
-        workMinutes: worker.workMinutes,
-        manDays: worker.manDays ?? 1,
-        isBillable: worker.isBillable,
-        status: "SUBMITTED",
-        submittedAt: new Date(),
-        createdByUserId: actor.id,
-      },
-    });
-    await db.dailyReportWorker.update({ where: { id: worker.id }, data: { siteAttendanceId: created.id } });
-    audit.push({
-      companyId: actor.companyId,
-      userId: actor.id,
-      action: "laborEntry.create",
-      targetType: "SiteAttendance",
-      targetId: created.id,
-    });
-  }
-
-  return audit;
 }
 
 /**
