@@ -113,7 +113,8 @@ export async function loadQuickMasters(user: { companyId: string; role: string }
     prisma.employee.findMany({
       where: { companyId },
       select: { id: true, name: true, position: true },
-      orderBy: { name: "asc" },
+      // 従業員の画面に登録した順。名前のボタンもこの順に並ぶ(並びを変えたいときは登録順で決まる)。
+      orderBy: [{ createdAt: "asc" }, { name: "asc" }],
     }),
     getOrCreateWorkSettings(companyId),
     canSeeCosts ? prisma.laborCategoryRate.findMany({ where: { companyId } }) : Promise.resolve([]),

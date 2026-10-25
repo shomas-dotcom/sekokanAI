@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { LaborCategory } from "@/generated/prisma/enums";
 import type { QuickMasterData } from "@/lib/dailyReport/masters";
 import {
@@ -11,7 +12,7 @@ import {
   type QuickMachine,
 } from "@/lib/dailyReport/quickInput";
 import { LABOR_CATEGORIES, LABOR_CATEGORY_LABEL, MAN_DAY_CHOICES, manDaysFromHours } from "@/lib/dailyReport/standardMasters";
-import { FieldBox, SelectedCard, Stepper, inputClass, newKey, yen } from "./parts";
+import { ChoiceButton, FieldBox, SelectedCard, Stepper, inputClass, newKey, yen } from "./parts";
 
 // 従業員をマスタから選べる区分。外注・応援・その他は、名前・所属会社・人数で入れる。
 const EMPLOYEE_CATEGORIES: (LaborCategory | null)[] = ["OWN_EMPLOYEE", "FOREMAN", "OPERATOR"];
@@ -69,10 +70,60 @@ export function LaborTab({
   const missingCount = amounts.filter((a) => a == null).length;
   const baseHours = Math.round((masters.manDayBaseMinutes / 60) * 100) / 100;
 
+  // 社員の名前のボタン: 押すとその人の行が1つ増え(自社社員・1人工)、もう一度押すと外れる。
+  function toggleEmployee(employee: QuickMasterData["employees"][number]) {
+    const existing = labor.find((l) => l.employeeId === employee.id);
+    if (existing) {
+      const touched = existing.workMinutes != null || existing.workDescription;
+      if (touched && !window.confirm(`「${employee.name}」の入力内容も消えます。外しますか?`)) return;
+      onChange(labor.filter((l) => l.key !== existing.key));
+      return;
+    }
+    onChange([
+      ...labor,
+      {
+        key: newKey(),
+        id: null,
+        category: "OWN_EMPLOYEE",
+        employeeId: employee.id,
+        workerName: employee.name,
+        affiliation: null,
+        headcount: 1,
+        manDays: 1,
+        workMinutes: null,
+      },
+    ]);
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="mb-2 text-sm font-semibold text-slate-700">人員を追加(区分を押してください)</p>
+        <p className="mb-2 text-sm font-semibold text-slate-700">社員を選ぶ(押すだけで追加。もう一度押すと外れます)</p>
+        {masters.employees.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2.5">
+            {masters.employees.map((e) => (
+              <ChoiceButton
+                key={e.id}
+                selected={labor.some((l) => l.employeeId === e.id)}
+                onClick={() => toggleEmployee(e)}
+              >
+                {e.name}
+              </ChoiceButton>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500">
+            社員が登録されていません。
+            <Link href="/employees" className="mx-1 font-medium text-orange-700 underline">
+              従業員の画面
+            </Link>
+            で登録すると、ここに名前のボタンが出ます。
+          </p>
+        )}
+      </div>
+
+      <div>
+        <p className="mb-2 text-sm font-semibold text-slate-700">外注・応援・その他の人員を追加(区分を押してください)</p>
         <div className="grid grid-cols-2 gap-2.5">
           {LABOR_CATEGORIES.map((c) => (
             <button
