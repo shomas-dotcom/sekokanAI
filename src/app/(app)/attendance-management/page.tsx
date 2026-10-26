@@ -64,6 +64,14 @@ export default async function AttendanceManagementPage({
           >
             勤怠表をExcelでダウンロード
           </a>
+          {employeeId && (
+            <a
+              href={`/attendance/pdf?month=${y}-${String(m).padStart(2, "0")}&employeeId=${employeeId}`}
+              className="rounded-full border border-slate-200 px-3 py-1.5 hover:bg-slate-50"
+            >
+              この人の出勤簿PDF
+            </a>
+          )}
         </div>
       </div>
 

@@ -49,7 +49,12 @@ export async function removeWorkerWithDerived(
       warnings.push(`「${worker.workerName}」の出面は承認済み・締め済みのため残しています。`);
     }
   }
-  if (worker.attendance && (worker.attendance.status === "DRAFT" || worker.attendance.status === "REJECTED")) {
+  // 勤怠ページで打刻した勤怠は、日報の作業員を消しても残す(打刻は日報とは別の事実のため)
+  if (
+    worker.attendance &&
+    !worker.attendance.clockInPunched &&
+    (worker.attendance.status === "DRAFT" || worker.attendance.status === "REJECTED")
+  ) {
     const remaining = await db.dailyReportWorker.findFirst({
       where: { attendanceId: worker.attendance.id, reflectToAttendance: true },
     });
@@ -172,7 +177,7 @@ export async function reflectDailyReportWorker(
         targetType: "Attendance",
         targetId: created.id,
       });
-    } else if (existing.status === "DRAFT" || existing.status === "REJECTED") {
+    } else if ((existing.status === "DRAFT" || existing.status === "REJECTED") && !existing.clockInPunched) {
       // 同じ人が同じ日に別の現場の日報にも出ている場合、その分とまとめて1日分を計算し直す
       // (以前は後から反映した現場の時間で上書きしており、3時間+4時間が4時間になっていた)。
       const alreadyLinked = await db.dailyReportWorker.findMany({
@@ -237,7 +242,8 @@ export async function reflectDailyReportWorker(
         targetId: existing.id,
       });
     } else {
-      // 承認済み・締め済み: 上書きしない。表示用にリンクだけ張る(画面側で「反映済み(承認済み)」等と示す)
+      // 承認済み・締め済み、または勤怠ページで打刻済み(打刻の時刻を正とする): 上書きしない。
+      // 表示用にリンクだけ張る(画面側で「反映済み(承認済み)」等と示す)
       await db.dailyReportWorker.update({ where: { id: worker.id }, data: { attendanceId: existing.id } });
     }
   }

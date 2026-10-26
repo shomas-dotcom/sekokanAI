@@ -48,9 +48,12 @@ export async function changeDailyReportDate(
   // 動かすものを集める(同じ勤怠・出面を複数の明細が指していても1回だけ動かす)。
   const siteAttendances = new Map<string, NonNullable<(typeof report.workers)[number]["siteAttendance"]>>();
   const attendances = new Map<string, { attendance: NonNullable<(typeof report.workers)[number]["attendance"]>; workerName: string }>();
+  // 勤怠ページで打刻した勤怠は、実際に働いた日の記録なので動かさない(日報とのつながりだけ外す)。
+  const punchedWorkerIds: string[] = [];
   for (const w of report.workers) {
     if (w.siteAttendance) siteAttendances.set(w.siteAttendance.id, w.siteAttendance);
-    if (w.attendance) attendances.set(w.attendance.id, { attendance: w.attendance, workerName: w.workerName });
+    if (w.attendance?.clockInPunched) punchedWorkerIds.push(w.id);
+    else if (w.attendance) attendances.set(w.attendance.id, { attendance: w.attendance, workerName: w.workerName });
   }
   const expenses = new Map<string, NonNullable<(typeof report.machineUsages)[number]["siteExpenseEntry"]>>();
   for (const u of report.machineUsages) {
@@ -125,6 +128,9 @@ export async function changeDailyReportDate(
         siteDepartureTime: shift(attendance.siteDepartureTime),
       },
     });
+  }
+  if (punchedWorkerIds.length > 0) {
+    await db.dailyReportWorker.updateMany({ where: { id: { in: punchedWorkerIds } }, data: { attendanceId: null } });
   }
   for (const e of expenses.values()) {
     await db.siteExpenseEntry.update({ where: { id: e.id }, data: { targetDate: params.newDate } });

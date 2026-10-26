@@ -3,41 +3,52 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const NAV = [
-  { href: "/dashboard", label: "ダッシュボード" },
-  { href: "/ai-tools", label: "AIツール" },
-  { href: "/customers", label: "顧客" },
-  { href: "/employees", label: "従業員" },
-  { href: "/projects", label: "案件" },
-  { href: "/quotes", label: "見積" },
-  { href: "/rate-master", label: "単価マスタ" },
-  { href: "/contracts", label: "契約" },
-  { href: "/invoices", label: "請求" },
+// 現場で毎日使うもの(勤怠の打刻・日報)を先頭に、よく使うものを前に並べる。
+const FREQUENT = [
+  { href: "/clock", label: "勤怠" },
   { href: "/daily-reports", label: "日報" },
   { href: "/attendance", label: "自分の勤怠" },
+  { href: "/projects", label: "案件" },
   { href: "/ky", label: "KY" },
-  { href: "/work-items", label: "作業内容マスタ" },
+];
+
+// 管理者だけのもののうち、よく使うもの(勤怠・出面の確認)は日常の項目のすぐ後ろに置く。
+const ADMIN_FREQUENT = [
+  { href: "/attendance-management", label: "勤怠管理" },
+  { href: "/site-attendance", label: "出面・常用集計" },
+];
+
+const OTHERS = [
+  { href: "/dashboard", label: "ダッシュボード" },
+  { href: "/quotes", label: "見積" },
+  { href: "/invoices", label: "請求" },
+  { href: "/contracts", label: "契約" },
+  { href: "/customers", label: "顧客" },
+  { href: "/employees", label: "従業員" },
+  { href: "/ai-tools", label: "AIツール" },
   { href: "/construction-plans", label: "施工計画書" },
+  { href: "/rate-master", label: "単価マスタ" },
+  { href: "/work-items", label: "作業内容マスタ" },
   { href: "/account", label: "アカウント" },
   { href: "/billing", label: "ご契約" },
+];
+
+const ADMIN_OTHERS = [
+  { href: "/cost-management", label: "原価管理" },
+  { href: "/settings", label: "会社設定" },
 ];
 
 export function NavLinks({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
   const items = isAdmin
-    ? [
-        ...NAV,
-        { href: "/attendance-management", label: "勤怠管理" },
-        { href: "/site-attendance", label: "出面・常用集計" },
-        { href: "/cost-management", label: "原価管理" },
-        { href: "/settings", label: "会社設定" },
-      ]
-    : NAV;
+    ? [...FREQUENT, ...ADMIN_FREQUENT, ...OTHERS, ...ADMIN_OTHERS]
+    : [...FREQUENT, ...OTHERS];
 
   return (
     <nav className="mx-auto flex max-w-5xl items-center gap-1 overflow-x-auto px-4 pb-2 text-sm">
       {items.map((item) => {
-        const active = pathname.startsWith(item.href);
+        // "/attendance" が "/attendance-management" でも光らないよう、区切りまで一致を見る
+        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <Link
             key={item.href}

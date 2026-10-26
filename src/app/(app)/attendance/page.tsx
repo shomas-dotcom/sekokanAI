@@ -59,6 +59,7 @@ export default async function AttendancePage({
 
   const records = await prisma.attendance.findMany({
     where: { employeeId: user.employeeId, companyId: user.companyId, targetDate: { gte: monthStart, lt: monthEnd } },
+    include: { project: { select: { name: true } } },
     orderBy: { targetDate: "asc" },
   });
 
@@ -76,6 +77,18 @@ export default async function AttendancePage({
           <Link href={`/attendance?month=${nextMonth}`} className="rounded-full border border-slate-200 px-3 py-1.5 hover:bg-slate-50">
             翌月
           </Link>
+          <Link
+            href={`/attendance/print?month=${y}-${String(m).padStart(2, "0")}`}
+            className="rounded-full border border-slate-200 px-3 py-1.5 hover:bg-slate-50"
+          >
+            出勤簿を印刷
+          </Link>
+          <a
+            href={`/attendance/pdf?month=${y}-${String(m).padStart(2, "0")}`}
+            className="rounded-full bg-gradient-to-br from-amber-500 to-orange-600 px-3 py-1.5 font-medium text-white"
+          >
+            出勤簿PDF
+          </a>
         </div>
       </div>
 
@@ -94,7 +107,7 @@ export default async function AttendancePage({
 
       {records.length === 0 && (
         <Card className="max-w-xl">
-          <p className="text-sm text-slate-500">この月の勤怠記録はまだありません(日報に作業員として登録されると自動で作られます)。</p>
+          <p className="text-sm text-slate-500">この月の勤怠記録はまだありません(「勤怠」画面で出勤を押すか、日報に作業員として登録されると自動で作られます)。</p>
         </Card>
       )}
 
@@ -104,7 +117,10 @@ export default async function AttendancePage({
           return (
             <Card key={r.id} className="max-w-xl">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-medium text-slate-900">{r.targetDate.toLocaleDateString("ja-JP")}</p>
+                <p className="font-medium text-slate-900">
+                  {r.targetDate.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })}
+                  {r.project && <span className="ml-2 text-sm font-normal text-slate-600">{r.project.name}</span>}
+                </p>
                 <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                   {STATUS_LABEL[r.status]}
                 </span>

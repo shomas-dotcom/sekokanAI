@@ -481,6 +481,7 @@ model Project {
   supervisors                ProjectSupervisor[]
   siteAttendances            SiteAttendance[]
   siteExpenseEntries         SiteExpenseEntry[]
+  attendances                Attendance[]
 
   @@index([companyId])
   @@index([customerId])
@@ -1530,6 +1531,12 @@ model Attendance {
   isLate              Boolean          @default(false)
   isEarlyLeave        Boolean          @default(false)
   remarks             String?
+  // 2026-10追記(出退勤の打刻)。勤怠ページの「出勤」ボタンで選んだ現場と、ボタンで打刻したかどうか。
+  // 打刻した日は、あとから日報の作業員明細が反映されても出勤・退勤の時刻を上書きしない(打刻を正とする)。
+  projectId           String?
+  project             Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  clockInPunched      Boolean          @default(false)
+  clockOutPunched     Boolean          @default(false)
   sourceDailyReportId String?
   sourceDailyReport   DailyReport?     @relation(fields: [sourceDailyReportId], references: [id], onDelete: SetNull)
   status              TimesheetStatus  @default(DRAFT)
@@ -1556,6 +1563,7 @@ model Attendance {
   @@index([companyId])
   @@index([companyId, targetDate])
   @@index([employeeId])
+  @@index([projectId])
 }
 
 enum ManDayUnit {
