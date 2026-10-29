@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { SESSION_COOKIE_NAME } from "@/lib/session";
 import { renderPrintPageToPdf } from "@/lib/pdf/renderPdf";
 import { buildContentDisposition, sanitizeFilenameComponent } from "@/lib/pdf/pdfFilename";
+import { pdfFailureMessage } from "@/lib/pdf/pdfError";
 import { monthParamString, parseMonthParam, resolveSheetEmployee } from "@/lib/timesheet/monthlySheet";
 
 /** 個人別の月間出勤簿をPDFでダウンロードする(管理者は employeeId で他の従業員も指定できる)。 */
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("出勤簿PDFの生成に失敗しました", error);
     return NextResponse.json(
-      { error: "PDFの生成に失敗しました。お手数ですが「印刷」画面からブラウザの印刷機能でお試しください。" },
+      { error: pdfFailureMessage(error, "「印刷」画面") },
       { status: 500 }
     );
   }

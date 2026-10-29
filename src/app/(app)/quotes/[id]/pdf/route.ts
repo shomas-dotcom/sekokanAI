@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE_NAME } from "@/lib/session";
 import { renderPrintPageToPdf } from "@/lib/pdf/renderPdf";
 import { buildContentDisposition, sanitizeFilenameComponent } from "@/lib/pdf/pdfFilename";
+import { pdfFailureMessage } from "@/lib/pdf/pdfError";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -29,7 +30,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   } catch (error) {
     console.error("見積PDFの生成に失敗しました", error);
     return NextResponse.json(
-      { error: "PDFの生成に失敗しました。お手数ですが「印刷 / PDF保存」からブラウザの印刷機能でお試しください。" },
+      { error: pdfFailureMessage(error, "「印刷 / PDF保存」") },
       { status: 500 }
     );
   }

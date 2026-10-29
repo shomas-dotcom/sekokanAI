@@ -1,6 +1,7 @@
 import puppeteer, { type LaunchOptions } from "puppeteer-core";
 import { SESSION_COOKIE_NAME } from "@/lib/session";
 import { prepareLinuxChromiumLibraries, resolveChromiumBinDir } from "@/lib/pdf/linuxChromium";
+import { atStage } from "@/lib/pdf/pdfError";
 
 /**
  * 実際にアプリの印刷用画面(/xxx/print)をヘッドレスブラウザで開き、本物のPDFファイルの
@@ -20,15 +21,17 @@ import { prepareLinuxChromiumLibraries, resolveChromiumBinDir } from "@/lib/pdf/
  */
 async function resolveLaunchOptions(): Promise<LaunchOptions> {
   if (process.platform === "linux") {
-    const chromiumModule = await import("@sparticuz/chromium");
-    const chromium = chromiumModule.default;
     // Render では @sparticuz/chromium が共有ライブラリを展開しないため、起動前に自分で展開する(linuxChromium.ts)
-    await prepareLinuxChromiumLibraries(chromiumModule, resolveChromiumBinDir());
-    return {
-      args: await puppeteer.defaultArgs({ args: chromium.args, headless: "shell" }),
-      executablePath: await chromium.executablePath(),
-      headless: "shell",
-    };
+    return atStage("prepare", async () => {
+      const chromiumModule = await import("@sparticuz/chromium");
+      const chromium = chromiumModule.default;
+      await prepareLinuxChromiumLibraries(chromiumModule, resolveChromiumBinDir());
+      return {
+        args: await puppeteer.defaultArgs({ args: chromium.args, headless: "shell" }),
+        executablePath: await chromium.executablePath(),
+        headless: "shell" as const,
+      };
+    });
   }
   const fullPuppeteer = (await import("puppeteer")).default;
   return {
@@ -43,20 +46,27 @@ export async function renderPrintPageToPdf(pathAndQuery: string, sessionToken: s
   const url = `http://127.0.0.1:${port}${pathAndQuery}`;
   const launchOptions = await resolveLaunchOptions();
 
-  const browser = await puppeteer.launch(launchOptions);
+  // 失敗したとき、どの段階かを画面のエラー表示にも出す(pdfError.ts)
+  const browser = await atStage("launch", () => puppeteer.launch(launchOptions));
   try {
-    const page = await browser.newPage();
-    await page.setCookie({
-      name: SESSION_COOKIE_NAME,
-      value: sessionToken,
-      domain: "127.0.0.1",
-      path: "/",
+    const page = await atStage("load", async () => {
+      const page = await browser.newPage();
+      await page.setCookie({
+        name: SESSION_COOKIE_NAME,
+        value: sessionToken,
+        domain: "127.0.0.1",
+        path: "/",
+      });
+      // 本番(0.5CPU)で写真の多い日報は読み込みに時間がかかるため、20秒から30秒に延ばす
+      const response = await page.goto(url, { waitUntil: "networkidle0", timeout: 30_000 });
+      if (response && !response.ok()) {
+        throw new Error(`印刷用画面が ${response.status()} を返しました(${pathAndQuery})`);
+      }
+      // 日本語フォント(printFont.ts)の読み込みが終わってからPDFにする(途中だと文字が抜ける)
+      await page.evaluate(() => document.fonts.ready);
+      return page;
     });
-    // 本番(0.5CPU)で写真の多い日報は読み込みに時間がかかるため、20秒から30秒に延ばす
-    await page.goto(url, { waitUntil: "networkidle0", timeout: 30_000 });
-    // 日本語フォント(printFont.ts)の読み込みが終わってからPDFにする(途中だと文字が抜ける)
-    await page.evaluate(() => document.fonts.ready);
-    const pdf = await page.pdf({ format: "A4", printBackground: true });
+    const pdf = await atStage("render", () => page.pdf({ format: "A4", printBackground: true }));
     return Buffer.from(pdf);
   } finally {
     await browser.close();
