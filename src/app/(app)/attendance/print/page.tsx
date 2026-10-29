@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { PrintButton } from "@/components/PrintButton";
+import { printFont } from "@/lib/pdf/printFont";
 import { formatJstTime } from "@/lib/timesheet/time";
 import { getOrCreateWorkSettings } from "@/lib/timesheet/settings";
 import { formatHm, loadMonthlySheet, parseMonthParam, resolveSheetEmployee } from "@/lib/timesheet/monthlySheet";
@@ -45,7 +46,7 @@ export default async function AttendanceSheetPrintPage({
   const cell = "border border-zinc-400 px-1 py-0.5";
 
   return (
-    <div className="mx-auto max-w-3xl bg-white p-6 print:max-w-none print:p-0">
+    <div className={`${printFont.className} mx-auto max-w-3xl bg-white p-6 print:max-w-none print:p-0`}>
       <style>{`@media print { @page { size: A4; margin: 10mm 10mm; } }`}</style>
       <div className="mb-4 flex justify-end print:hidden">
         <PrintButton />

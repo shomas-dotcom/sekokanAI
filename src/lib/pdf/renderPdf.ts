@@ -1,5 +1,6 @@
 import puppeteer, { type LaunchOptions } from "puppeteer-core";
 import { SESSION_COOKIE_NAME } from "@/lib/session";
+import { prepareLinuxChromiumLibraries, resolveChromiumBinDir } from "@/lib/pdf/linuxChromium";
 
 /**
  * 実際にアプリの印刷用画面(/xxx/print)をヘッドレスブラウザで開き、本物のPDFファイルの
@@ -19,7 +20,10 @@ import { SESSION_COOKIE_NAME } from "@/lib/session";
  */
 async function resolveLaunchOptions(): Promise<LaunchOptions> {
   if (process.platform === "linux") {
-    const chromium = (await import("@sparticuz/chromium")).default;
+    const chromiumModule = await import("@sparticuz/chromium");
+    const chromium = chromiumModule.default;
+    // Render では @sparticuz/chromium が共有ライブラリを展開しないため、起動前に自分で展開する(linuxChromium.ts)
+    await prepareLinuxChromiumLibraries(chromiumModule, resolveChromiumBinDir());
     return {
       args: await puppeteer.defaultArgs({ args: chromium.args, headless: "shell" }),
       executablePath: await chromium.executablePath(),
@@ -48,7 +52,10 @@ export async function renderPrintPageToPdf(pathAndQuery: string, sessionToken: s
       domain: "127.0.0.1",
       path: "/",
     });
-    await page.goto(url, { waitUntil: "networkidle0", timeout: 20_000 });
+    // 本番(0.5CPU)で写真の多い日報は読み込みに時間がかかるため、20秒から30秒に延ばす
+    await page.goto(url, { waitUntil: "networkidle0", timeout: 30_000 });
+    // 日本語フォント(printFont.ts)の読み込みが終わってからPDFにする(途中だと文字が抜ける)
+    await page.evaluate(() => document.fonts.ready);
     const pdf = await page.pdf({ format: "A4", printBackground: true });
     return Buffer.from(pdf);
   } finally {

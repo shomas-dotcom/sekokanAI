@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PrintButton } from "@/components/PrintButton";
+import { printFont } from "@/lib/pdf/printFont";
 
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -34,7 +35,7 @@ export default async function DailyReportPrintPage({
   const weekday = WEEKDAY_JA[report.reportDate.getDay()];
 
   return (
-    <div className="mx-auto max-w-3xl bg-white p-8 print:p-0">
+    <div className={`${printFont.className} mx-auto max-w-3xl bg-white p-8 print:p-0`}>
       <style>{`@media print { @page { size: A4; margin: 15mm 15mm; } }`}</style>
       <div className="mb-4 flex justify-end print:hidden">
         <PrintButton />

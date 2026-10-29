@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { computeQuoteTotals } from "../../totals";
 import { PrintButton } from "./PrintButton";
+import { printFont } from "@/lib/pdf/printFont";
 
 export default async function QuotePrintPage({
   params,
@@ -26,7 +27,7 @@ export default async function QuotePrintPage({
   const today = new Date().toLocaleDateString("ja-JP");
 
   return (
-    <div className="mx-auto max-w-3xl bg-white p-8 print:p-0">
+    <div className={`${printFont.className} mx-auto max-w-3xl bg-white p-8 print:p-0`}>
       <div className="mb-4 flex justify-end print:hidden">
         <PrintButton />
       </div>
